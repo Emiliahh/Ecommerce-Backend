@@ -17,7 +17,9 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.enableCors({
     origin: (origin, callback) => {
-      const allowedOrigins = [process.env.CLIENT_URL ?? 'http://localhost:3001'];
+      const allowedOrigins = [
+        process.env.CLIENT_URL ?? 'http://localhost:3001',
+      ];
       // Allow requests with no origin (Next.js SSR / server-to-server / mobile apps)
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);

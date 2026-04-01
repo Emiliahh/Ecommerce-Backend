@@ -154,6 +154,7 @@ export const payment_methods = pgTable('payment_methods', {
   name: text('name').notNull(), // 'Credit Card', 'Thanh toán khi nhận hàng'
   isActive: boolean('is_active').default(true),
   config: jsonb('config'), // Store provider-specific settings if needed
+  image: text('image'), // Optional icon for the payment method
 });
 
 /**
@@ -255,12 +256,12 @@ export const product_attribute_values = pgTable('product_attribute_values', {
   id: uuid('id').defaultRandom().primaryKey(),
   productId: uuid('product_id')
     .references(() => products.id, {
-      onDelete: 'cascade'
+      onDelete: 'cascade',
     })
     .notNull(),
   attributeId: uuid('attribute_id')
     .references(() => attributes.id, {
-      onDelete: 'cascade'
+      onDelete: 'cascade',
     })
     .notNull(),
 
@@ -279,7 +280,7 @@ export const product_variants = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     productId: uuid('product_id')
       .references(() => products.id, {
-        onDelete: 'cascade'
+        onDelete: 'cascade',
       })
       .notNull(),
     sku: varchar('sku', { length: 255 }).notNull(),
@@ -328,7 +329,7 @@ export const product_images = pgTable('product_images', {
   id: uuid('id').defaultRandom().primaryKey(),
   productId: uuid('product_id')
     .references(() => products.id, {
-      onDelete: 'cascade'
+      onDelete: 'cascade',
     })
     .notNull(),
   url: text('url').notNull(),
@@ -346,12 +347,12 @@ export const variant_images = pgTable(
   {
     variantId: uuid('variant_id')
       .references(() => product_variants.id, {
-        onDelete: 'cascade'
+        onDelete: 'cascade',
       })
       .notNull(),
     imageId: uuid('image_id')
       .references(() => product_images.id, {
-        onDelete: 'cascade'
+        onDelete: 'cascade',
       })
       .notNull(),
     // Let a variant pick its own "main" image from the shared pool
@@ -411,20 +412,22 @@ export const discount_event_products = pgTable('discount_event_products', {
 /**
  *  Customer cart
  */
-export const customer_carts = pgTable('customer_carts', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .references(() => users.id)
-    .notNull(),
-  variantId: uuid('variant_id')
-    .references(() => product_variants.id)
-    .notNull(),
-  quantity: integer('quantity').notNull().default(1),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (t) => [
-  uniqueIndex('cart_user_variant_idx').on(t.userId, t.variantId),
-]);
+export const customer_carts = pgTable(
+  'customer_carts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .references(() => users.id)
+      .notNull(),
+    variantId: uuid('variant_id')
+      .references(() => product_variants.id)
+      .notNull(),
+    quantity: integer('quantity').notNull().default(1),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('cart_user_variant_idx').on(t.userId, t.variantId)],
+);
 /**
  * save customer order
  */

@@ -11,11 +11,11 @@ import {
 import { IPaginatedRes } from 'src/types/IPaginatedRes';
 
 // 1. Automatically generate base schemas for reading
-const selectProductSchema = createSelectSchema(products).omit({
+export const selectProductSchema = createSelectSchema(products).omit({
   createdAt: true,
   updatedAt: true,
 });
-const selectVariantSchema = createSelectSchema(product_variants);
+export const selectVariantSchema = createSelectSchema(product_variants);
 const selectImageSchema = createSelectSchema(product_images);
 
 const selectCategorySchema = createSelectSchema(categories).omit({
@@ -81,7 +81,7 @@ const GetProductResponseSchema = selectProductSchema.extend({
 
 export default class GetProductResponseDto extends createZodDto(
   GetProductResponseSchema,
-) { }
+) {}
 
 const PaginatedGetProductResponseSchema: z.ZodType<
   IPaginatedRes<GetProductResponseDto>
@@ -92,17 +92,19 @@ const PaginatedGetProductResponseSchema: z.ZodType<
 
 export class PaginatedGetProductResponseDto extends createZodDto(
   PaginatedGetProductResponseSchema,
-) { }
+) {}
 
-const GetProductListResponseSchema = selectProductSchema.omit({ description: true }).extend({
-  images: z.array(selectImageSchema.pick({ url: true, isMain: true })),
-  variants: z.array(selectVariantSchema.pick({ price: true, sku: true })),
-  categorySlug: z.string(),
-});
+const GetProductListResponseSchema = selectProductSchema
+  .omit({ description: true })
+  .extend({
+    images: z.array(selectImageSchema.pick({ url: true, isMain: true })),
+    variants: z.array(selectVariantSchema.pick({ price: true, sku: true })),
+    categorySlug: z.string(),
+  });
 
 export class GetProductListResponseDto extends createZodDto(
   GetProductListResponseSchema,
-) { }
+) {}
 
 const PaginatedGetProductListResponseSchema = z.object({
   count: z.number(),
@@ -111,7 +113,7 @@ const PaginatedGetProductListResponseSchema = z.object({
 
 export class PaginatedGetProductListResponseDto extends createZodDto(
   PaginatedGetProductListResponseSchema,
-) { }
+) {}
 
 const productQuerySchema = z.object({
   category: z.string().optional(),
@@ -119,7 +121,9 @@ const productQuerySchema = z.object({
   limit: z.number().max(100).min(0).default(10).optional(),
   sort_method: z.string().optional(),
   q: z.string().optional(),
-  filter: z.record(z.string(), z.array(z.union([z.string(), z.number()]))).optional(),
+  filter: z
+    .record(z.string(), z.array(z.union([z.string(), z.number()])))
+    .optional(),
 });
 
-export class ProductQueryDto extends createZodDto(productQuerySchema) { }
+export class ProductQueryDto extends createZodDto(productQuerySchema) {}

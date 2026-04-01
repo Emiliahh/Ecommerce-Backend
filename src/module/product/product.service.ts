@@ -37,7 +37,6 @@ import {
 import { CreateProductDto } from './dto/create-product.dto';
 import GetProductResponseDto, {
   PaginatedGetProductListResponseDto,
-  PaginatedGetProductResponseDto,
   ProductQueryDto,
 } from './dto/get-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -48,7 +47,7 @@ export class ProductService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DB,
     private readonly cache: CacheRegistry,
-  ) { }
+  ) {}
 
   async create(dto: CreateProductDto) {
     // Check if category exists
@@ -279,7 +278,13 @@ export class ProductService {
 
       const variant_option = optionsData.reduce(
         (acc, curr) => {
-          const { attributeId, attributeName, optionId, optionValue, sortOrder } = curr;
+          const {
+            attributeId,
+            attributeName,
+            optionId,
+            optionValue,
+            sortOrder,
+          } = curr;
           let attr = acc.find((a) => a.value === attributeId);
 
           if (!attr) {
@@ -308,7 +313,6 @@ export class ProductService {
           order: number;
         }[],
       );
-
 
       const groupedAttributesRecord = product.attributeValues.reduce(
         (acc, curr) => {
@@ -367,7 +371,7 @@ export class ProductService {
         const attributes = attributeValues.map((curr) => ({
           attributeId: curr.attributeId,
           optionId: curr.optionId,
-          value: curr.value || curr.option?.value || "",
+          value: curr.value || curr.option?.value || '',
         }));
 
         return {
@@ -458,7 +462,7 @@ export class ProductService {
                       gte(product_variants.price, minPriceNum),
                       lte(product_variants.price, maxPriceNum),
                     ),
-                  )
+                  ),
               ),
             );
           } else {
@@ -475,7 +479,10 @@ export class ProductService {
                     and(
                       eq(product_attribute_values.productId, productsTable.id),
                       eq(attributes.id, attributeName),
-                      inArray(product_attribute_values.optionId, values.map((v) => v.toString())),
+                      inArray(
+                        product_attribute_values.optionId,
+                        values.map((v) => v.toString()),
+                      ),
                     ),
                   ),
               ),
@@ -528,7 +535,7 @@ export class ProductService {
           return [
             query.sort_method === 'asc'
               ? asc(minPriceSubquery)
-              : desc(minPriceSubquery)
+              : desc(minPriceSubquery),
           ];
         },
       }),
@@ -701,8 +708,8 @@ export class ProductService {
         const deleteVariants =
           toDelete.length > 0
             ? tx
-              .delete(product_variants)
-              .where(inArray(product_variants.id, toDelete))
+                .delete(product_variants)
+                .where(inArray(product_variants.id, toDelete))
             : Promise.resolve();
 
         // Process all variants in parallel
@@ -797,26 +804,26 @@ export class ProductService {
               await Promise.all([
                 newData.attributes?.length
                   ? tx.insert(variant_attribute_values).values(
-                    newData.attributes.map((attr) => ({
-                      variantId,
-                      attributeId: attr.attributeId,
-                      optionId: attr.optionId,
-                      value: attr.value,
-                    })),
-                  )
+                      newData.attributes.map((attr) => ({
+                        variantId,
+                        attributeId: attr.attributeId,
+                        optionId: attr.optionId,
+                        value: attr.value,
+                      })),
+                    )
                   : Promise.resolve(),
 
                 newData.images?.length
                   ? tx.insert(variant_images).values(
-                    newData.images.map((url, index) => {
-                      const imageId = urlToImageId.get(url);
-                      if (!imageId)
-                        throw new InternalServerErrorException(
-                          `Image ID not found for URL: ${url}`,
-                        );
-                      return { variantId, imageId, isMain: index === 0 };
-                    }),
-                  )
+                      newData.images.map((url, index) => {
+                        const imageId = urlToImageId.get(url);
+                        if (!imageId)
+                          throw new InternalServerErrorException(
+                            `Image ID not found for URL: ${url}`,
+                          );
+                        return { variantId, imageId, isMain: index === 0 };
+                      }),
+                    )
                   : Promise.resolve(),
               ]);
             }
@@ -842,11 +849,9 @@ export class ProductService {
     });
   }
   private generateSlug(name: string): string {
-    return (
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '')
-    );
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
   }
 }

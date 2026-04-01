@@ -20,8 +20,14 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AttributeGroupResponseDto, CategoryWithAttributeGroupsDto } from './dto/get-attribute.dto';
-import { GetCategoryFilterDto, GetCategoryFilterResponseDto } from './dto/get-category-filter.dto';
+import {
+  AttributeGroupResponseDto,
+  CategoryWithAttributeGroupsDto,
+} from './dto/get-attribute.dto';
+import {
+  GetCategoryFilterDto,
+  GetCategoryFilterResponseDto,
+} from './dto/get-category-filter.dto';
 import { CatalogService } from './catalog.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import UpdateCategoryDto from './dto/update-category.dto';
@@ -37,11 +43,15 @@ import { Roles } from 'src/decorator/role';
 import { eq } from 'drizzle-orm';
 import { RoleGuard } from 'src/guard/role.guard';
 import { Public } from 'src/decorator/isPublic';
-import { GetCategoryDetailResponseDto, PaginatedCategoryListResponseDto, CategoryTreeResponseDto } from './dto/get-categort.dto';
+import {
+  GetCategoryDetailResponseDto,
+  PaginatedCategoryListResponseDto,
+  CategoryTreeResponseDto,
+} from './dto/get-categort.dto';
 @ApiTags('Category')
 @Controller('category')
 export class CatalogController {
-  constructor(private readonly catalogService: CatalogService) { }
+  constructor(private readonly catalogService: CatalogService) {}
   @Get('')
   @Public()
   @ApiOperation({ summary: 'Get all categories' })

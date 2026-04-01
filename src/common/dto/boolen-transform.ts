@@ -1,5 +1,5 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const booleanString = z
-    .enum(['true', 'false'])
-    .transform((val) => val === 'true');
+  .enum(['true', 'false'])
+  .transform((val) => val === 'true');

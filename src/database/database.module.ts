@@ -3,7 +3,7 @@ import { DrizzleProvider } from './dizzle.provider';
 
 @Global()
 @Module({
-    providers: [DrizzleProvider],
-    exports: [DrizzleProvider],
+  providers: [DrizzleProvider],
+  exports: [DrizzleProvider],
 })
-export class DatabaseModule { }
+export class DatabaseModule {}

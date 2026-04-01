@@ -12,7 +12,7 @@ export const seoMetaData = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   keywords: z.array(z.string()).optional(),
-})
+});
 const createVariantAttributeValueSchema = createInsertSchema(
   variant_attribute_values,
   {
@@ -83,4 +83,4 @@ const createSchema = createInsertSchema(products, {
     sku: z.string().min(1, 'SKU is required').optional(),
   });
 
-export class CreateProductDto extends createZodDto(createSchema) { }
+export class CreateProductDto extends createZodDto(createSchema) {}

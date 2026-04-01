@@ -25,7 +25,7 @@ export const updateVariantAttributeValueSchema = createUpdateSchema(
       (val) => (val === '' || val === null ? undefined : val),
       z.uuid({ message: 'ID tùy chọn không hợp lệ' }).optional(),
     ),
-    value: z.string().optional()
+    value: z.string().optional(),
   },
 ).omit({
   variantId: true,
@@ -87,4 +87,4 @@ export const updateSchema = createUpdateSchema(products, {
     attribute: z.array(updateAttributeSchema).optional(),
   });
 
-export class UpdateProductDto extends createZodDto(updateSchema) { }
+export class UpdateProductDto extends createZodDto(updateSchema) {}

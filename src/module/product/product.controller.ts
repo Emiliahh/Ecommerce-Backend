@@ -30,7 +30,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 @ApiTags('Product')
 @Controller('product')
 export class ProductController {
-  constructor(private readonly productService: ProductService) { }
+  constructor(private readonly productService: ProductService) {}
 
   @Post()
   // @Roles('admin', 'superadmin')

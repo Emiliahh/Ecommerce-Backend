@@ -51,7 +51,7 @@ export class CatalogService {
     @Inject(DRIZZLE)
     private readonly db: DB,
     private readonly cacheRegistry: CacheRegistry,
-  ) { }
+  ) {}
   async createCategory(dto: CreateCategoryDto) {
     const newCategory = await this.db.transaction(async (tx) => {
       const slug = generateSlug(dto.name);
@@ -66,8 +66,8 @@ export class CatalogService {
       }
       const parentCategory = dto.parentId
         ? await tx.query.categories.findFirst({
-          where: eq(categories.id, dto.parentId),
-        })
+            where: eq(categories.id, dto.parentId),
+          })
         : null;
       if (dto.parentId && !parentCategory) {
         throw new NotFoundException('Parent category not found');
@@ -182,7 +182,10 @@ export class CatalogService {
         .limit(1),
     ]);
     const categoryWithAttribute = await this.db.query.categories.findMany({
-      where: inArray(categories.id, parents.map((p) => p.id)),
+      where: inArray(
+        categories.id,
+        parents.map((p) => p.id),
+      ),
       with: {
         attributeGroups: {
           with: {
@@ -304,16 +307,16 @@ export class CatalogService {
         limit: filter.limit,
         with: filter.includeAttributes
           ? {
-            attributeGroups: {
-              with: {
-                attributes: {
-                  with: {
-                    options: true,
+              attributeGroups: {
+                with: {
+                  attributes: {
+                    with: {
+                      options: true,
+                    },
                   },
                 },
               },
-            },
-          }
+            }
           : undefined,
       });
 

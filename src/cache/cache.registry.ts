@@ -6,7 +6,7 @@ import { categories } from 'src/database/schema';
 export type CategoryEntity = typeof categories.$inferSelect;
 type CategoryTree = CategoryEntity & {
   children: CategoryTree[];
-}
+};
 @Injectable()
 export class CacheRegistry implements OnModuleInit {
   private readonly logger = new Logger(CacheRegistry.name);
@@ -17,27 +17,27 @@ export class CacheRegistry implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE)
     private readonly db: DB,
-  ) { }
+  ) {}
 
   async onModuleInit() {
     await this.reloadCategories();
   }
   buildTree() {
     for (const [key, value] of this.categoriesById) {
-      this.categoriesTree.set(key, { ...value, children: [] })
+      this.categoriesTree.set(key, { ...value, children: [] });
     }
     // iterate over the tree and add children to the parent
     for (const [key, value] of this.categoriesTree) {
       if (value.parentId) {
-        const parent = this.categoriesTree.get(value.parentId)
+        const parent = this.categoriesTree.get(value.parentId);
         if (parent) {
-          parent.children.push(value)
+          parent.children.push(value);
         }
       }
     }
     for (const [key, value] of this.categoriesTree) {
       if (value.parentId) {
-        this.categoriesTree.delete(key)
+        this.categoriesTree.delete(key);
       }
     }
   }

@@ -26,7 +26,7 @@ import { Public } from 'src/decorator/isPublic';
 @ApiTags('Cloudinary')
 @Controller('cloudinary')
 export class CloudinaryController {
-  constructor(private readonly cloudinaryService: CloudinaryService) { }
+  constructor(private readonly cloudinaryService: CloudinaryService) {}
 
   // --- UPLOAD SINGLE ---
   @Post('upload')
@@ -85,7 +85,8 @@ export class CloudinaryController {
           items: {
             type: 'string',
           },
-          description: 'Mảng các ID tương ứng với từng file (Tùy chọn, gửi nhiều ID bằng cách add thêm item)',
+          description:
+            'Mảng các ID tương ứng với từng file (Tùy chọn, gửi nhiều ID bằng cách add thêm item)',
         },
       },
     },
@@ -98,13 +99,19 @@ export class CloudinaryController {
       items: {
         type: 'object',
         properties: {
-          public_id: { type: 'string', example: 'ecommerce/kkggaiywy5u5h7ybckzd' },
+          public_id: {
+            type: 'string',
+            example: 'ecommerce/kkggaiywy5u5h7ybckzd',
+          },
           width: { type: 'number', example: 528 },
           height: { type: 'number', example: 528 },
           format: { type: 'string', example: 'jpg' },
           bytes: { type: 'number', example: 40102 },
           url: { type: 'string', example: 'http://res.cloudinary.com/...' },
-          secure_url: { type: 'string', example: 'https://res.cloudinary.com/...' },
+          secure_url: {
+            type: 'string',
+            example: 'https://res.cloudinary.com/...',
+          },
           clientId: { type: 'string', example: '1' }, // ID giả từ client
         },
       },

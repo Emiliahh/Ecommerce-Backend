@@ -38,10 +38,7 @@ export class CloudinaryService {
       streamifier.createReadStream(file.buffer).pipe(uploadStream);
     });
   }
-  async uploadFiles(
-    files: Express.Multer.File[],
-    ids: string[] = [],
-  ) {
+  async uploadFiles(files: Express.Multer.File[], ids: string[] = []) {
     if (!files || files.length === 0) {
       return [];
     }
@@ -56,7 +53,7 @@ export class CloudinaryService {
         bytes: uploadResult.bytes,
         url: uploadResult.url,
         secure_url: uploadResult.secure_url,
-        clientId: ids[index] || undefined, 
+        clientId: ids[index] || undefined,
       };
     });
 
