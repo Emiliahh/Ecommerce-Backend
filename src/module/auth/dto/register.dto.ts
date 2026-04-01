@@ -4,8 +4,8 @@ export const password_validate = z
     .string()
     .min(8, 'Password must be at least 8 characters long')
     .regex(
-        /^(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z0-9]+$/,
-        'Password must be alphanumeric and contain at least one letter and one number'
+        /^(?=.*[a-zA-Z])(?=.*\d).+$/,
+        'Password must contain at least one letter and one number'
     );
 export const registerSchema = z.object({
     email: z.string().email().describe('User\'s email address. Example: user@example.com'),

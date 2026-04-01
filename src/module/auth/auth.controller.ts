@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
 import { Public } from 'src/decorator/isPublic';
 import { ChangePasswordDto, RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, LoginResponseDto } from './dto/login.dto';
 import UserDTO from 'src/common/dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { EnvConfig } from 'src/env.validation';
@@ -26,6 +26,7 @@ export class AuthController {
     @Public()
     @UseGuards(LocalAuthGuard)
     @Post('login')
+    @ApiOkResponse({ type: LoginResponseDto })
     async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
         const { access_token, refresh_token } = await this.authService.login(req.user);
         this.setRefreshTokenCookie(res, refresh_token);
@@ -80,7 +81,7 @@ export class AuthController {
         }
     }
     @Post('change-password')
-    @ApiBearerAuth()    
+    @ApiBearerAuth()
     async changePassword(@Body() dto: ChangePasswordDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
         const user = req.user as any;
         await this.authService.updatePassword(user.userId, dto);

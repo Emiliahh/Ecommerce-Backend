@@ -12,8 +12,22 @@ import {
   attribute_options,
   attributes,
   categories,
+  product_variants,
+  products,
 } from 'src/database/schema';
-import { and, asc, desc, eq, ilike, isNull, lte, sql, SQL, inArray, InferSelectModel } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  isNull,
+  lte,
+  sql,
+  SQL,
+  inArray,
+  InferSelectModel,
+} from 'drizzle-orm';
 import UpdateCategoryDto from './dto/update-category.dto';
 import { CategoryWithAttributeGroupsDto } from './dto/get-attribute.dto';
 import { GetCategoryFilterDto } from './dto/get-category-filter.dto';
@@ -27,7 +41,10 @@ import {
 } from './dto/attribute.dto';
 import generateSlug from 'src/util/slugtify';
 import { CacheRegistry } from 'src/cache/cache.registry';
-import { CategoryTreeResponseDto, GetCategoryDetailResponseDto } from './dto/get-categort.dto';
+import {
+  CategoryTreeResponseDto,
+  GetCategoryDetailResponseDto,
+} from './dto/get-categort.dto';
 @Injectable()
 export class CatalogService {
   constructor(
@@ -37,7 +54,7 @@ export class CatalogService {
   ) { }
   async createCategory(dto: CreateCategoryDto) {
     const newCategory = await this.db.transaction(async (tx) => {
-      const slug = generateSlug(dto.name)
+      const slug = generateSlug(dto.name);
       // check if slug is already exists
       const [existingCategory] = await tx
         .select()
@@ -47,9 +64,11 @@ export class CatalogService {
       if (existingCategory) {
         throw new ConflictException('Slug already exists');
       }
-      const parentCategory = dto.parentId ? await tx.query.categories.findFirst({
-        where: eq(categories.id, dto.parentId),
-      }) : null;
+      const parentCategory = dto.parentId
+        ? await tx.query.categories.findFirst({
+          where: eq(categories.id, dto.parentId),
+        })
+        : null;
       if (dto.parentId && !parentCategory) {
         throw new NotFoundException('Parent category not found');
       }
@@ -130,6 +149,78 @@ export class CatalogService {
       throw new InternalServerErrorException(error.message || 'Update failed');
     }
   }
+  async getCategoryFilter(slug: string) {
+    const category = this.cacheRegistry.categoriesBySlug.get(slug);
+    if (!category) {
+      throw new NotFoundException('category not found');
+    }
+    const parents = this.getPath(category.id);
+    const [lowerPrice, upperPrice] = await Promise.all([
+      this.db
+        .select({ price: product_variants.price })
+        .from(product_variants)
+        .leftJoin(products, eq(product_variants.productId, products.id))
+        .where(
+          inArray(
+            products.categoryId,
+            parents.map((p) => p.id),
+          ),
+        )
+        .orderBy(product_variants.price)
+        .limit(1),
+      this.db
+        .select({ price: product_variants.price })
+        .from(product_variants)
+        .leftJoin(products, eq(product_variants.productId, products.id))
+        .where(
+          inArray(
+            products.categoryId,
+            parents.map((p) => p.id),
+          ),
+        )
+        .orderBy(desc(product_variants.price))
+        .limit(1),
+    ]);
+    const categoryWithAttribute = await this.db.query.categories.findMany({
+      where: inArray(categories.id, parents.map((p) => p.id)),
+      with: {
+        attributeGroups: {
+          with: {
+            attributes: {
+              where: eq(attributes.filterable, true),
+              with: {
+                options: true,
+              },
+              orderBy: (attributes, { asc }) => [asc(attributes.sortOrder)],
+            },
+          },
+        },
+      },
+    });
+    const list = categoryWithAttribute.flatMap((category) =>
+      category.attributeGroups.flatMap((group) =>
+        group.attributes.map((attr) => {
+          return {
+            label: attr.name,
+            value: attr.id,
+            options: attr.options.map((opt) => ({
+              label: opt.value,
+              value: opt.id,
+            })),
+          };
+        }),
+      ),
+    );
+    return {
+      path: parents,
+      filters: list,
+      // for price filter
+      priceRange: {
+        min: lowerPrice[0]?.price,
+        max: upperPrice[0]?.price,
+      },
+    };
+  }
   async deleteCategory(id: string) {
     try {
       const [deletedCategory] = await this.db
@@ -189,7 +280,7 @@ export class CatalogService {
         conditions.push(isNull(categories.parentId));
       }
       if (filter.maxDepth) {
-        conditions.push(lte(categories.level, filter.maxDepth))
+        conditions.push(lte(categories.level, filter.maxDepth));
       }
 
       const whereClause = and(...conditions);
@@ -262,7 +353,8 @@ export class CatalogService {
         .where(eq(attribute_groups.id, id))
         .returning();
 
-      if (!updatedGroup) throw new NotFoundException('Attribute group not found');
+      if (!updatedGroup)
+        throw new NotFoundException('Attribute group not found');
 
       await this.cacheRegistry.reloadCategories();
       return updatedGroup;
@@ -288,9 +380,7 @@ export class CatalogService {
             .delete(attribute_options)
             .where(inArray(attribute_options.attributeId, attrIds));
           // Delete Attributes
-          await tx
-            .delete(attributes)
-            .where(eq(attributes.groupId, id));
+          await tx.delete(attributes).where(eq(attributes.groupId, id));
         }
 
         const [deletedGroup] = await tx
@@ -310,10 +400,7 @@ export class CatalogService {
       throw new InternalServerErrorException(error.message);
     }
   }
-
-  // ────────────────────────────────────────────────────────────────
   // ATTRIBUTES
-  // ────────────────────────────────────────────────────────────────
   async createAttribute(groupId: string, dto: CreateAttributeDto) {
     try {
       const [newAttr] = await this.db
@@ -388,7 +475,10 @@ export class CatalogService {
   // ────────────────────────────────────────────────────────────────
   // ATTRIBUTE OPTIONS
   // ────────────────────────────────────────────────────────────────
-  async createAttributeOption(attributeId: string, dto: CreateAttributeOptionDto) {
+  async createAttributeOption(
+    attributeId: string,
+    dto: CreateAttributeOptionDto,
+  ) {
     try {
       const [newOption] = await this.db
         .insert(attribute_options)
@@ -420,7 +510,8 @@ export class CatalogService {
         .where(eq(attribute_options.id, id))
         .returning();
 
-      if (!updatedOption) throw new NotFoundException('Attribute option not found');
+      if (!updatedOption)
+        throw new NotFoundException('Attribute option not found');
 
       await this.cacheRegistry.reloadCategories();
       return updatedOption;
@@ -437,7 +528,8 @@ export class CatalogService {
         .where(eq(attribute_options.id, id))
         .returning();
 
-      if (!deletedOption) throw new NotFoundException('Attribute option not found');
+      if (!deletedOption)
+        throw new NotFoundException('Attribute option not found');
 
       await this.cacheRegistry.reloadCategories();
       return deletedOption;
@@ -468,8 +560,8 @@ export class CatalogService {
     }
   }
   async buildTree(): Promise<CategoryTreeResponseDto[]> {
-    const items = await this.db.query.categories.findMany()
-    const map = new Map<string, CategoryTreeResponseDto>()
+    const items = await this.db.query.categories.findMany();
+    const map = new Map<string, CategoryTreeResponseDto>();
     items.forEach((e) => {
       map.set(e.id, {
         label: e.name,
@@ -478,17 +570,34 @@ export class CatalogService {
         level: e.level || 0,
         slug: e.slug,
         children: [],
-      })
-    })
-    items.filter((e) => e.parentId).forEach((e) => {
-      const parent = map.get(e.parentId!)
-      if (parent) {
-        const childNode = map.get(e.id)
-        if (childNode) {
-          parent.children.push(childNode)
+      });
+    });
+    items
+      .filter((e) => e.parentId)
+      .forEach((e) => {
+        const parent = map.get(e.parentId!);
+        if (parent) {
+          const childNode = map.get(e.id);
+          if (childNode) {
+            parent.children.push(childNode);
+          }
         }
-      }
-    })
-    return items.filter((e) => !e.parentId).map((e) => map.get(e.id)!)
+      });
+    return items.filter((e) => !e.parentId).map((e) => map.get(e.id)!);
+  }
+  private getPath(categoryId: string) {
+    const categoryPath: { id: string; name: string; slug: string }[] = [];
+    let current = this.cacheRegistry.getCategoryById(categoryId);
+    while (current) {
+      categoryPath.unshift({
+        id: current.id,
+        name: current.name,
+        slug: current.slug,
+      });
+      current = current.parentId
+        ? this.cacheRegistry.getCategoryById(current.parentId)
+        : undefined;
+    }
+    return categoryPath;
   }
 }

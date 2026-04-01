@@ -21,7 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AttributeGroupResponseDto, CategoryWithAttributeGroupsDto } from './dto/get-attribute.dto';
-import { GetCategoryFilterDto } from './dto/get-category-filter.dto';
+import { GetCategoryFilterDto, GetCategoryFilterResponseDto } from './dto/get-category-filter.dto';
 import { CatalogService } from './catalog.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import UpdateCategoryDto from './dto/update-category.dto';
@@ -34,6 +34,7 @@ import {
   UpdateAttributeOptionDto,
 } from './dto/attribute.dto';
 import { Roles } from 'src/decorator/role';
+import { eq } from 'drizzle-orm';
 import { RoleGuard } from 'src/guard/role.guard';
 import { Public } from 'src/decorator/isPublic';
 import { GetCategoryDetailResponseDto, PaginatedCategoryListResponseDto, CategoryTreeResponseDto } from './dto/get-categort.dto';
@@ -63,6 +64,13 @@ export class CatalogController {
   @ApiOkResponse({ type: GetCategoryDetailResponseDto })
   async getCategoryDetail(@Param('id', ParseUUIDPipe) id: string) {
     return await this.catalogService.getCategoryDetail(id);
+  }
+  @Get('filter/:slug')
+  @Public()
+  @ApiOperation({ summary: 'Get the list of filterable for categoryPage' })
+  @ApiOkResponse({ type: GetCategoryFilterResponseDto })
+  async getCategoryDetailBySlug(@Param('slug') slug: string) {
+    return await this.catalogService.getCategoryFilter(slug);
   }
 
   @Post('')

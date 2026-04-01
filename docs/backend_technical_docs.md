@@ -25,7 +25,7 @@
 | `user_role`      | `customer`, `admin`, `superadmin`                            |
 | `discount_types` | `percentage`, `fixed`                                        |
 | `order_status`   | `pending`, `processing`, `shipped`, `delivered`, `cancelled` |
-| `payment_status` | `pending`, `success`, `failed`, `cancelled`, `refunded`      |
+| `payment_status` | `pending`, `success`, `failed`, `expired`, `cancelled`, `refunded`, `partial_refunded` |
 
 ---
 
@@ -102,6 +102,7 @@ Self-referencing tree. Supports unlimited depth (e.g., **Electronics → Smartph
 | `image`                     | `text`      |                                |
 | `slug`                      | `text`      | Unique, URL-safe               |
 | `parent_id`                 | `uuid`      | Self-reference FK, null = root |
+| `level`                     | `integer`   | Nesting depth level            |
 | `is_deleted`                | `boolean`   | Soft delete, default `false`   |
 | `created_at` / `updated_at` | `timestamp` |                                |
 
@@ -135,11 +136,12 @@ The base product container (e.g., _"iPhone 17 Pro Max"_). Does not represent a p
 | `category_id` | `uuid`         | FK → `categories.id`           |
 | `brand_id`    | `uuid`         | FK → `brands.id`, nullable     |
 | `name`        | `text`         |                                |
-| `slug`        | `varchar(255)` | Unique                         |
-| `description` | `jsonb`        | Rich text / structured content |
-| `created_at`  | `timestamp`    |                                |
-| `is_deleted`  | `boolean`      | Soft delete, default `false`   |
-| `updated_at`  | `timestamp`    |                                |
+| `slug`         | `varchar(255)` | Unique                         |
+| `description`  | `jsonb`        | Rich text / structured content |
+| `seo_metadata` | `jsonb`        | Title, Description, OG Image   |
+| `created_at`   | `timestamp`    |                                |
+| `is_deleted`   | `boolean`      | Soft delete, default `false`   |
+| `updated_at`   | `timestamp`    |                                |
 
 **Indexes:** `products_category_idx` · `products_slug_idx`
 
@@ -177,6 +179,7 @@ Individual spec fields (e.g., _Processor_, _Screen Size_).
 | `slug`       | `text`        | Unique within group        |
 | `type`       | `varchar(32)` | Default: `text`            |
 | `filterable` | `boolean`     | Show in filter sidebar     |
+| `is_variant` | `boolean`     | Used for product variants  |
 | `unit`       | `text`        | e.g., "inch", "GB"         |
 | `sort_order` | `serial`      | Display ordering           |
 

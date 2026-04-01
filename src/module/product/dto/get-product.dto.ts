@@ -94,7 +94,7 @@ export class PaginatedGetProductResponseDto extends createZodDto(
   PaginatedGetProductResponseSchema,
 ) { }
 
-const GetProductListResponseSchema = selectProductSchema.extend({
+const GetProductListResponseSchema = selectProductSchema.omit({ description: true }).extend({
   images: z.array(selectImageSchema.pick({ url: true, isMain: true })),
   variants: z.array(selectVariantSchema.pick({ price: true, sku: true })),
   categorySlug: z.string(),
@@ -119,7 +119,7 @@ const productQuerySchema = z.object({
   limit: z.number().max(100).min(0).default(10).optional(),
   sort_method: z.string().optional(),
   q: z.string().optional(),
-  filter: z.record(z.string(), z.array(z.string())).optional(),
+  filter: z.record(z.string(), z.array(z.union([z.string(), z.number()]))).optional(),
 });
 
 export class ProductQueryDto extends createZodDto(productQuerySchema) { }

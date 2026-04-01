@@ -15,7 +15,20 @@ async function bootstrap() {
   });
   app.setGlobalPrefix('api');
   app.useGlobalInterceptors(new LoggingInterceptor());
-  app.enableCors();
+  app.enableCors({
+    origin: (origin, callback) => {
+      const allowedOrigins = [process.env.CLIENT_URL ?? 'http://localhost:3001'];
+      // Allow requests with no origin (Next.js SSR / server-to-server / mobile apps)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: Origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   const openApiDoc = SwaggerModule.createDocument(
     app,

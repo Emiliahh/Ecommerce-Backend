@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   Inject,
   Injectable,
@@ -9,14 +10,17 @@ import {
   and,
   count,
   exists,
+  gte,
   ilike,
   InferInsertModel,
   notInArray,
   or,
   sql,
+  lte,
+  eq,
+  inArray,
   SQL,
 } from 'drizzle-orm';
-import { eq, inArray } from 'drizzle-orm';
 import { DRIZZLE, type DB } from 'src/database/dizzle.provider';
 import {
   products,
@@ -405,7 +409,15 @@ export class ProductService {
     const { offset, limit, q, filter, category } = query;
     const buildWhereConditions = (productsTable: typeof products) => {
       const conditions: SQL[] = [];
+      if (filter && Object.keys(filter).length > 0 && !category) {
+        throw new BadRequestException(
+          'Category is required when filter is present',
+        );
+      }
       if (category) {
+        const childs = this.cache.getAllDescendants(category);
+        const categoryIds = [category, ...childs.map((c) => c.id)];
+        // sort by price order
         conditions.push(
           exists(
             this.db
@@ -414,44 +426,61 @@ export class ProductService {
               .where(
                 and(
                   eq(categories.id, productsTable.categoryId),
-                  eq(categories.slug, category),
+                  inArray(categories.id, categoryIds),
                 ),
               ),
           ),
         );
       }
       if (q) {
-        // case insensitive
         const searchCondition = or(ilike(productsTable.name, `%${q}%`));
         if (searchCondition) {
           conditions.push(searchCondition);
         }
       }
-      // filter will be purely attribute based
       if (filter) {
         Object.entries(filter).forEach(([attributeName, values]) => {
-          conditions.push(
-            exists(
-              this.db
-                .select()
-                .from(product_attribute_values)
-                .innerJoin(
-                  attributes,
-                  eq(product_attribute_values.attributeId, attributes.id),
-                )
-                .leftJoin(
-                  attribute_options,
-                  eq(product_attribute_values.optionId, attribute_options.id),
-                )
-                .where(
-                  and(
-                    eq(product_attribute_values.productId, productsTable.id),
-                    eq(attributes.slug, attributeName),
-                    inArray(attribute_options.value, values),
+          if (!Array.isArray(values) || values.length === 0) return;
+
+          if (attributeName === 'price') {
+            const [minPrice, maxPrice] = values;
+            // safely convert number to avoid errors
+            const minPriceNum = Number(minPrice) || 0;
+            const maxPriceNum = Number(maxPrice) || 2_147_483_647;
+            conditions.push(
+              exists(
+                this.db
+                  .select()
+                  .from(product_variants)
+                  .where(
+                    and(
+                      eq(product_variants.productId, productsTable.id),
+                      gte(product_variants.price, minPriceNum),
+                      lte(product_variants.price, maxPriceNum),
+                    ),
+                  )
+              ),
+            );
+          } else {
+            conditions.push(
+              exists(
+                this.db
+                  .select()
+                  .from(product_attribute_values)
+                  .innerJoin(
+                    attributes,
+                    eq(product_attribute_values.attributeId, attributes.id),
+                  )
+                  .where(
+                    and(
+                      eq(product_attribute_values.productId, productsTable.id),
+                      eq(attributes.id, attributeName),
+                      inArray(product_attribute_values.optionId, values.map((v) => v.toString())),
+                    ),
                   ),
-                ),
-            ),
-          );
+              ),
+            );
+          }
         });
       }
       return conditions.length > 0 ? and(...conditions) : undefined;
@@ -465,6 +494,9 @@ export class ProductService {
 
       this.db.query.products.findMany({
         where: () => buildWhereConditions(products),
+        columns: {
+          description: false,
+        },
         with: {
           category: {
             columns: {
@@ -486,7 +518,19 @@ export class ProductService {
         },
         offset,
         limit,
-        orderBy: (products, { desc }) => [desc(products.createdAt)],
+        orderBy: (p, { asc, desc }) => {
+          const minPriceSubquery = sql`(
+            SELECT MIN("product_variants"."price") 
+            FROM "product_variants" 
+            WHERE "product_variants"."product_id" = ${p.id}
+          )`;
+
+          return [
+            query.sort_method === 'asc'
+              ? asc(minPriceSubquery)
+              : desc(minPriceSubquery)
+          ];
+        },
       }),
     ]);
 
@@ -494,9 +538,9 @@ export class ProductService {
 
     return {
       count: totalCount,
-      data: data.map((product) => ({
+      data: data.map(({ category, ...product }) => ({
         ...product,
-        categorySlug: product.category.slug,
+        categorySlug: category.slug,
       })),
     };
   }
@@ -802,9 +846,7 @@ export class ProductService {
       name
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '') +
-      '-' +
-      Date.now()
+        .replace(/(^-|-$)+/g, '')
     );
   }
 }

@@ -11,7 +11,7 @@ export const DrizzleProvider = {
   useFactory: (configService: ConfigService) => {
     const url = configService.get<string>('DATABASE_URL');
     const client = postgres(url as string);
-    const db = drizzle(client, { schema });
+    const db = drizzle(client, { schema, logger: true });
     return db;
   },
 };

@@ -16,3 +16,31 @@ const getCategoryFilterSchema = z.object({
 }).extend(paginateSchema.shape);
 
 export class GetCategoryFilterDto extends createZodDto(getCategoryFilterSchema) { }
+
+const filterOptionSchema = z.object({
+    label: z.string(),
+    value: z.string(),
+});
+
+const filterAttributeSchema = z.object({
+    label: z.string(),
+    value: z.string(),
+    options: z.array(filterOptionSchema),
+});
+
+const categoryPathSchema = z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    slug: z.string(),
+});
+
+const getCategoryFilterResponseSchema = z.object({
+    path: z.array(categoryPathSchema),
+    priceRange: z.object({
+        min: z.number().optional(),
+        max: z.number().optional(),
+    }),
+    filters: z.array(filterAttributeSchema),
+});
+
+export class GetCategoryFilterResponseDto extends createZodDto(getCategoryFilterResponseSchema) { }
