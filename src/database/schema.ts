@@ -373,7 +373,7 @@ export const discount_events_groups = pgTable('discount_events_groups', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
-  order: integer(),
+  order: integer('order'),
   bannerImage: text('banner_image'),
   isActive: boolean('is_active').notNull().default(true),
   startDate: timestamp('start_date').notNull(),
@@ -390,6 +390,8 @@ export const discount_events = pgTable('discount_events', {
   // end date is optional, mean it can be manual remove
   groupId: uuid('group_id').references(() => discount_events_groups.id),
   endDate: timestamp('end_date'),
+  /** Admin can manually end an event early ("Kết thúc sự kiện" action) */
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
