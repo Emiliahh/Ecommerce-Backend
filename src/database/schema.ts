@@ -49,6 +49,7 @@ export const users = pgTable(
     image: text('image'),
     passwordHash: text('password_hash'),
     role: userRole('role').notNull().default('customer'),
+    isDeleted: boolean('is_deleted').notNull().default(false),
     provider: varchar('provider', { length: 32 })
       .notNull()
       .default('credentials'),
@@ -83,7 +84,7 @@ export const user_addresses = pgTable('user_addresses', {
   phone: varchar('phone', { length: 15 }).notNull(),
   // dùng dữ liệu của việt nam
   province_code: text('province_code').notNull(),
-  district_code: text('district_code').notNull(),
+  district_code: text('district_code'),
   ward_code: text('ward_code').notNull(),
   isDefault: boolean('is_default').notNull().default(false),
   userId: uuid('user_id')
@@ -445,6 +446,7 @@ export const customer_orders = pgTable(
     total: integer('total').notNull().default(0),
     discountAmount: integer('discount_amount').notNull().default(0),
     shippingFee: integer('shipping_fee').notNull().default(0),
+    customerNote: text('customer_note'),
 
     // Snapshot of shipping info so past orders aren't affected if user modifies/deletes their address book
     shippingAddress: text('shipping_address'),

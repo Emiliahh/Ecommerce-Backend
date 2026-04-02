@@ -10,6 +10,8 @@ import {
   customer_orders,
   customer_orders_items,
   order_logs,
+  payment_methods,
+  payments,
   product_variants,
   variant_images,
 } from 'src/database/schema';
@@ -23,7 +25,7 @@ import { Subject } from 'rxjs';
 export class OrderService {
   public readonly orderEvents$ = new Subject<{ data: any }>();
 
-  constructor(@Inject(DRIZZLE) private readonly db: DB) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DB) { }
   async createOrder(userID: string, dto: CreateOrderDto) {
     return await this.db.transaction(async (tx) => {
       const { items, ...orderData } = dto;
@@ -62,6 +64,16 @@ export class OrderService {
         orderId: order[0].id,
         note: `Tạo đơn hàng`,
         toStatus: 'pending',
+      }, tx);
+      const paymentMethod = await this.getPaymentMethod(dto.paymentMethodCode);
+      if (!paymentMethod) {
+        throw new BadRequestException('Payment method not found');
+      }
+      await tx.insert(payments).values({
+        orderId: order[0].id,
+        paymentMethodId: paymentMethod.id,
+        amount: total,
+        status: 'pending',
       });
 
       this.orderEvents$.next({
@@ -72,6 +84,11 @@ export class OrderService {
       });
 
       return order[0];
+    });
+  }
+  async getPaymentMethod(code: string) {
+    return await this.db.query.payment_methods.findFirst({
+      where: eq(payment_methods.code, code),
     });
   }
   async updateOrder(orderId: string, data: UpdateOrderDto) {
@@ -85,7 +102,6 @@ export class OrderService {
       }
 
       if (!data.status) {
-        // If it's just a note update without status change
         if (data.note) {
           await this.addLog(
             {
@@ -155,11 +171,11 @@ export class OrderService {
   async getAllOrder(userId: string | undefined, query: GetOrderQueryDto) {
     const { limit, offset, status } = query;
     const conditions: SQL[] = [];
-    
+
     if (userId) {
       conditions.push(eq(customer_orders.userId, userId));
     }
-    
+
     if (status) {
       conditions.push(eq(customer_orders.status, status));
     }
@@ -176,7 +192,22 @@ export class OrderService {
           with: {
             variant: {
               with: {
-                product: true,
+                product: {
+                  columns: {
+                    description: false,
+                    seoMetadata: false,
+                  }
+                },
+                variantImages: {
+                  with: {
+                    image: {
+                      columns: {
+                        url: true,
+                      }
+                    }
+                  },
+                  where: eq(variant_images.isMain, true),
+                },
               },
             },
           },
@@ -210,16 +241,28 @@ export class OrderService {
           with: {
             variant: {
               with: {
-                product: true,
+                product: {
+                  columns: {
+                    description: false,
+                    seoMetadata: false,
+                  },
+                },
                 variantImages: {
                   with: {
-                    image: true,
+                    image: {
+                      columns: {
+                        url: true,
+                      },
+                    },
                   },
                   where: eq(variant_images.isMain, true),
                 },
               },
             },
           },
+        },
+        logs: {
+          orderBy: (logs, { desc }) => [desc(logs.createdAt)],
         },
       },
     });

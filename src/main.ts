@@ -19,6 +19,7 @@ async function bootstrap() {
     origin: (origin, callback) => {
       const allowedOrigins = [
         process.env.CLIENT_URL ?? 'http://localhost:3001',
+        process.env.ADMIN_URL ?? 'http://localhost:3000',
       ];
       // Allow requests with no origin (Next.js SSR / server-to-server / mobile apps)
       if (!origin || allowedOrigins.includes(origin)) {

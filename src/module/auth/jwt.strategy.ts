@@ -8,7 +8,10 @@ import { EnvConfig } from 'src/env.validation';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(configService: ConfigService<EnvConfig, true>) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        ExtractJwt.fromUrlQueryParameter('token')
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get('JWT_SECRET'),
     });

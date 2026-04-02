@@ -22,7 +22,7 @@ export class AuthService {
     @Inject(DRIZZLE) private readonly db: DB,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService<EnvConfig, true>,
-  ) {}
+  ) { }
 
   // allow phone or email
   async verifyUser(email: string, password: string) {
@@ -88,7 +88,12 @@ export class AuthService {
     }
 
     // Issue new access token
-    const accessPayload = { sub: payload.sub, username: payload.username };
+    const accessPayload = {
+      sub: payload.sub,
+      userId: payload.sub,
+      username: payload.username,
+      role: payload.role,
+    };
     return {
       access_token: await this.jwtService.signAsync(accessPayload),
     };
@@ -111,6 +116,7 @@ export class AuthService {
         role: true,
         name: true,
         image: true,
+        isDeleted: true,
       },
     });
     if (!user) {
@@ -139,7 +145,12 @@ export class AuthService {
   }
 
   private async generateTokens(user: any) {
-    const payload = { sub: user.id, username: user.email, role: user.role };
+    const payload = {
+      sub: user.id,
+      userId: user.id,
+      username: user.email,
+      role: user.role,
+    };
 
     const access_token = await this.jwtService.signAsync(payload);
 

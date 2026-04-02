@@ -10,8 +10,8 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Observable } from 'rxjs';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiBody } from '@nestjs/swagger';
+import { Observable, filter } from 'rxjs';
 import PaginateDTO from 'src/common/dto/paginate.dto';
 import {
   GetOrderQueryDto,
@@ -33,10 +33,20 @@ export class OrderController {
   constructor(private readonly orderService: OrderService) { }
 
   @Sse('sse')
-  @Roles('admin', 'superadmin')
-  @ApiOperation({ summary: 'SSE stream for order events (Admin dashboard)' })
-  orderEvents(): Observable<any> {
-    return this.orderService.orderEvents$.asObservable();
+  @Roles('customer', 'admin', 'superadmin')
+  @UseGuards(RoleGuard)
+  @ApiOperation({ summary: 'SSE stream for order events' })
+  orderEvents(@CurrentUser() user: any): Observable<any> {
+    const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+    return this.orderService.orderEvents$.asObservable().pipe(
+      // Ensure users only see events for their own orders unless they are an admin
+      filter((event: any) => {
+        if (isAdmin) return true;
+        // Check if the event data belongs to the user
+        // Assuming your event.data contains the updated order object
+        return event.data?.order?.userId === user.userId;
+      })
+    );
   }
 
   @Get('')
@@ -45,12 +55,9 @@ export class OrderController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all order' })
   @ApiResponse({ type: PaginatedGetOrderResponseDto })
-  async getAllOrder(@Req() req: Request, @Query() query: GetOrderQueryDto) {
-    const user = req.user as JwtPayload & { role: string };
-    const isAdmin = user.role === 'admin' || user.role === 'superadmin';
-    const userId = isAdmin ? query.userId : user.sub;
-
-    return this.orderService.getAllOrder(userId, query);
+  async getAllOrder(@CurrentUser('userId') userId: string, @CurrentUser('role') role: string, @Query() query: GetOrderQueryDto) {
+    const isAdmin = role === 'admin' || role === 'superadmin';
+    return this.orderService.getAllOrder(isAdmin ? undefined : userId, query);
   }
 
   @Get(':id')
@@ -70,15 +77,16 @@ export class OrderController {
   @Post('')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new order' })
-  async createOrder(@Req() req: Request, @Body() dto: CreateOrderDto) {
-    const user = req.user as JwtPayload;
-    return this.orderService.createOrder(user.sub, dto);
+  async createOrder(@CurrentUser('userId') userId: string, @Body() dto: CreateOrderDto) {
+    console.log(userId)
+    return this.orderService.createOrder(userId, dto);
   }
 
   @Patch(':id')
   @Roles('admin', 'superadmin')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update an order (Admin Only)' })
+  @ApiBody({ type: UpdateOrderDto })
   async updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
     return this.orderService.updateOrder(id, dto);
   }

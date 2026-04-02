@@ -23,6 +23,10 @@ const ADMIN_EMAIL = 'admin@admin.com';
 const ADMIN_PHONE = '0123456789';
 const ADMIN_PASSWORD = 'admin123#';
 
+const NORMAL_EMAIL = 'normal@normal.com';
+const NORMAL_PHONE = '0363636339';
+const NORMAL_PASSWORD = 'normal123#';
+
 async function seed() {
   const client = postgres(process.env.DATABASE_URL!);
   const db = drizzle(client, { schema });
@@ -30,13 +34,14 @@ async function seed() {
   console.log('🌱 Seeding admin user...');
 
   //   seed payment methods cod
-  await db.insert(schema.payment_methods).values({
-    name: 'Thanh toán khi nhận hàng (COD)',
-    code: 'cod',
-    image: 'https://cdn-icons-png.flaticon.com/512/10351/10351751.png',
-  });
-  return;
 
+  await db.insert(users).values({
+    email: NORMAL_EMAIL,
+    phone: NORMAL_PHONE,
+    passwordHash: await hash(NORMAL_PASSWORD),
+    role: 'customer',
+  });
+  return 
   const existing = await db
     .select()
     .from(users)

@@ -87,4 +87,4 @@ export const updateSchema = createUpdateSchema(products, {
     attribute: z.array(updateAttributeSchema).optional(),
   });
 
-export class UpdateProductDto extends createZodDto(updateSchema) {}
+export class UpdateProductDto extends createZodDto(updateSchema) { }

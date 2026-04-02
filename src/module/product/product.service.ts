@@ -47,7 +47,7 @@ export class ProductService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DB,
     private readonly cache: CacheRegistry,
-  ) {}
+  ) { }
 
   async create(dto: CreateProductDto) {
     // Check if category exists
@@ -708,8 +708,8 @@ export class ProductService {
         const deleteVariants =
           toDelete.length > 0
             ? tx
-                .delete(product_variants)
-                .where(inArray(product_variants.id, toDelete))
+              .delete(product_variants)
+              .where(inArray(product_variants.id, toDelete))
             : Promise.resolve();
 
         // Process all variants in parallel
@@ -804,26 +804,26 @@ export class ProductService {
               await Promise.all([
                 newData.attributes?.length
                   ? tx.insert(variant_attribute_values).values(
-                      newData.attributes.map((attr) => ({
-                        variantId,
-                        attributeId: attr.attributeId,
-                        optionId: attr.optionId,
-                        value: attr.value,
-                      })),
-                    )
+                    newData.attributes.map((attr) => ({
+                      variantId,
+                      attributeId: attr.attributeId,
+                      optionId: attr.optionId,
+                      value: attr.value,
+                    })),
+                  )
                   : Promise.resolve(),
 
                 newData.images?.length
                   ? tx.insert(variant_images).values(
-                      newData.images.map((url, index) => {
-                        const imageId = urlToImageId.get(url);
-                        if (!imageId)
-                          throw new InternalServerErrorException(
-                            `Image ID not found for URL: ${url}`,
-                          );
-                        return { variantId, imageId, isMain: index === 0 };
-                      }),
-                    )
+                    newData.images.map((url, index) => {
+                      const imageId = urlToImageId.get(url);
+                      if (!imageId)
+                        throw new InternalServerErrorException(
+                          `Image ID not found for URL: ${url}`,
+                        );
+                      return { variantId, imageId, isMain: index === 0 };
+                    }),
+                  )
                   : Promise.resolve(),
               ]);
             }
