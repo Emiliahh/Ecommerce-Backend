@@ -22,10 +22,10 @@ import GetProductResponseDto, {
   PaginatedGetProductListResponseDto,
   ProductQueryDto,
 } from './dto/get-product.dto';
-import { Roles } from 'src/decorator/role';
 import { RoleGuard } from 'src/guard/role.guard';
 import { Public } from 'src/decorator/isPublic';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { Roles } from 'src/decorator/role';
 
 @ApiTags('Product')
 @Controller('product')
@@ -33,7 +33,7 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Post()
-  // @Roles('admin', 'superadmin')
+  @Roles('admin', 'superadmin')
   @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.CREATED)
@@ -63,7 +63,7 @@ export class ProductController {
   }
 
   @Patch(':id')
-  // @Roles('admin', 'superadmin')
+  @Roles('admin', 'superadmin')
   @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.OK)
