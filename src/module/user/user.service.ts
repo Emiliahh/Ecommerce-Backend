@@ -162,28 +162,26 @@ export class UserService {
   }
 
   async addAddress(userId: string, dto: CreateAddressDto) {
-    return await this.db.transaction(async (tx) => {
-      if (dto.isDefault) {
-        // Unset previous default addresses
-        await tx
-          .update(user_addresses)
-          .set({ isDefault: false })
-          .where(eq(user_addresses.userId, userId));
-      }
+    const [newAddress] = await this.db
+      .insert(user_addresses)
+      .values({
+        ...dto,
+        userId,
+      })
+      .returning();
 
-      const [newAddress] = await tx
-        .insert(user_addresses)
-        .values({
-          ...dto,
-          userId,
-        })
-        .returning();
+    if (dto.isDefault) {
+      return this.setDefaultAddress(userId, newAddress.id);
+    }
 
-      return newAddress;
-    });
+    return newAddress;
   }
 
-  async updateAddress(userId: string, addressId: string, dto: UpdateAddressDto) {
+  async updateAddress(
+    userId: string,
+    addressId: string,
+    dto: UpdateAddressDto,
+  ) {
     const address = await this.db.query.user_addresses.findFirst({
       where: and(
         eq(user_addresses.id, addressId),
@@ -195,26 +193,17 @@ export class UserService {
       throw new NotFoundException('Address not found');
     }
 
-    return await this.db.transaction(async (tx) => {
-      if (dto.isDefault) {
-        // Unset previous default addresses
-        await tx
-          .update(user_addresses)
-          .set({ isDefault: false })
-          .where(and(
-            eq(user_addresses.userId, userId),
-            ne(user_addresses.id, addressId)
-          ));
-      }
+    const [updatedAddress] = await this.db
+      .update(user_addresses)
+      .set(dto)
+      .where(eq(user_addresses.id, addressId))
+      .returning();
 
-      const [updatedAddress] = await tx
-        .update(user_addresses)
-        .set(dto)
-        .where(eq(user_addresses.id, addressId))
-        .returning();
+    if (dto.isDefault) {
+      return await this.setDefaultAddress(userId, addressId);
+    }
 
-      return updatedAddress;
-    });
+    return updatedAddress;
   }
 
   async deleteAddress(userId: string, addressId: string) {

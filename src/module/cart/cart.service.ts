@@ -1,15 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE, type DB } from 'src/database/dizzle.provider';
-import { and, eq, sql } from 'drizzle-orm';
-import { customer_carts, variant_images } from 'src/database/schema';
+import { and, eq, gte, lte, or, isNull, sql, exists } from 'drizzle-orm';
+import {
+  customer_carts,
+  discount_event_products,
+  discount_events,
+  variant_images,
+} from 'src/database/schema';
 import { AddCartDto } from './dto/add-cart';
 import { GetCartResponseDto } from './dto/get-cart.dto';
 
 @Injectable()
 export class CartService {
-  constructor(@Inject(DRIZZLE) private readonly db: DB) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DB) { }
 
   async getUserCart(userId: string): Promise<GetCartResponseDto[]> {
+    const now = new Date();
     const cart = await this.db.query.customer_carts.findMany({
       where: eq(customer_carts.userId, userId),
       with: {
@@ -22,6 +28,17 @@ export class CartService {
                 updatedAt: false,
                 seoMetadata: false,
               },
+              with: {
+                discountEvents: {
+                  columns: {
+                    discountPercentage: true,
+                    stock: true,
+                  },
+                  with: {
+                    event: true,
+                  },
+                },
+              },
             },
             variantImages: {
               with: {
@@ -33,7 +50,18 @@ export class CartService {
         },
       },
     });
-    return cart;
+    // filter js side
+    const filteredCart = cart.filter((item) => {
+
+      return item.variant.product.discountEvents.some((event) => {
+        return (
+          event.event.isActive &&
+          event.event.startDate <= now &&
+          (event.event.endDate === null || event.event.endDate >= now)
+        );
+      });
+    });
+    return filteredCart;
   }
   async updateCart(userId: string, dto: AddCartDto) {
     const cart = await this.db.query.customer_carts.findFirst({

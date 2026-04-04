@@ -389,7 +389,9 @@ export const discount_events = pgTable('discount_events', {
   description: text('description'),
   startDate: timestamp('start_date').notNull(),
   // end date is optional, mean it can be manual remove
-  groupId: uuid('group_id').references(() => discount_events_groups.id),
+  groupId: uuid('group_id').references(() => discount_events_groups.id, {
+    onDelete: 'cascade',
+  }),
   endDate: timestamp('end_date'),
   /** Admin can manually end an event early ("Kết thúc sự kiện" action) */
   isActive: boolean('is_active').notNull().default(true),
