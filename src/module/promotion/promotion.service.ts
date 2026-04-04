@@ -50,7 +50,6 @@ import {
   GetPromoCodeQueryDto,
 } from './dto/promo-code.dto';
 
-
 @Injectable()
 export class PromotionService {
   constructor(@Inject(DRIZZLE) private readonly db: DB) { }
@@ -298,45 +297,52 @@ export class PromotionService {
       },
     });
   }
-  async checkOverlap(productId: string, startDate: Date, endDate?: Date | null, excludeEventId?: string) {
-    const overlapping = await this.db.query.discount_event_products.findFirst({
-      where: and(
-        eq(discount_event_products.productId, productId),
-        exists(
-          this.db
-            .select()
-            .from(discount_events)
-            .where(
-              and(
-                eq(discount_events.id, discount_event_products.eventId),
-                eq(discount_events.isActive, true),
-                excludeEventId
-                  ? ne(discount_events.id, excludeEventId)
-                  : undefined,
-                lte(discount_events.startDate, endDate ?? new Date("9999-12-31")),
-                or(
-                  isNull(discount_events.endDate),
-                  gte(discount_events.endDate, startDate),
-                ),
-              ),
-            ),
+  async checkOverlap(
+    productId: string,
+    startDate: Date,
+    endDate?: Date | null,
+    excludeEventId?: string,
+  ) {
+    const result = await this.db
+      .select({ eventId: discount_event_products.eventId })
+      .from(discount_event_products)
+      .innerJoin(
+        discount_events,
+        and(
+          eq(discount_events.id, discount_event_products.eventId),
+          eq(discount_events.isActive, true),
+          excludeEventId ? ne(discount_events.id, excludeEventId) : undefined,
+          lte(discount_events.startDate, endDate ?? new Date('9999-12-31')),
+          or(
+            isNull(discount_events.endDate),
+            gte(discount_events.endDate, startDate),
+          ),
         ),
-      ),
-    });
+      )
+      .where(eq(discount_event_products.productId, productId))
+      .limit(1);
 
-    return !!overlapping;
+    return result.length > 0;
   }
   async addProductToEvent(eventId: string, dto: AddProductToEventDto) {
     const event = await this.db.query.discount_events.findFirst({
       where: eq(discount_events.id, eventId),
     });
     if (!event) throw new NotFoundException('Discount event not found');
-    let overlap = await this.checkOverlap(dto.productId, event.startDate, event.endDate, eventId);
+    const overlap = await this.checkOverlap(
+      dto.productId,
+      event.startDate,
+      event.endDate,
+      eventId,
+    );
     const product = await this.db.query.products.findFirst({
       where: eq(products.id, dto.productId),
     });
     if (!product) throw new NotFoundException('Product not found');
-    if (overlap) throw new ConflictException(`Product ${product.name} is already in another active event ${event.name}`);
+    if (overlap)
+      throw new ConflictException(
+        `Product ${product.name} is already in another active event ${event.name}`,
+      );
 
     const existing = await this.db.query.discount_event_products.findFirst({
       where: and(
@@ -503,7 +509,7 @@ export class PromotionService {
     await this.db.delete(promo_code).where(eq(promo_code.id, id));
     return { message: 'Deleted' };
   }
-    async getProductVariantWithDiscountPrice(id: string) {
+  async getProductVariantWithDiscountPrice(id: string) {
     const now = new Date();
     return await this.db
       .select({
@@ -541,7 +547,6 @@ export class PromotionService {
           ),
         ),
       )
-      .where(eq(product_variants.productId, id))
-  } 
-  
+      .where(eq(product_variants.productId, id));
+  }
 }
