@@ -13,6 +13,9 @@ export const envSchema = z.object({
   CLOUDINARY_NAME: z.string(),
   CLOUDINARY_API_KEY: z.string(),
   CLOUDINARY_API_SECRET: z.string(),
+  PAYOS_CLIENT_ID: z.string().default(''),
+  PAYOS_API_KEY: z.string().default(''),
+  PAYOS_CHECKSUM_KEY: z.string().default(''),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

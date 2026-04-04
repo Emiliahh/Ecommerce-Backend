@@ -33,6 +33,8 @@ import {
   attribute_options,
   variant_attribute_values,
   attribute_groups,
+  discount_events,
+  discount_event_products,
 } from 'src/database/schema';
 import { CreateProductDto } from './dto/create-product.dto';
 import GetProductResponseDto, {
@@ -41,13 +43,15 @@ import GetProductResponseDto, {
 } from './dto/get-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CacheRegistry } from 'src/cache/cache.registry';
+import { PromotionService } from '../promotion/promotion.service';
 
 @Injectable()
 export class ProductService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DB,
+    private readonly promotionService: PromotionService,
     private readonly cache: CacheRegistry,
-  ) { }
+  ) {}
 
   async create(dto: CreateProductDto) {
     // Check if category exists
@@ -182,99 +186,120 @@ export class ProductService {
       };
     });
   }
-  async getProduct(product_id: string): Promise<GetProductResponseDto> {
-    try {
-      const product = await this.db.query.products.findFirst({
-        where:
-          product_id.length == 36
-            ? eq(products.id, product_id)
-            : eq(products.slug, product_id),
-        with: {
-          category: {
-            columns: {
-              slug: true,
-            },
+  // plain get product detail without mapping
+  async getProductDetail(product_id: string) {
+    const product = await this.db.query.products.findFirst({
+      where:
+        product_id.length == 36
+          ? eq(products.id, product_id)
+          : eq(products.slug, product_id),
+      with: {
+        category: {
+          columns: {
+            slug: true,
           },
-          variants: {
-            with: {
-              variantImages: {
-                with: {
-                  image: {
-                    columns: {
-                      id: true,
-                      url: true,
-                    },
-                  },
-                },
-              },
-              attributeValues: {
-                with: {
-                  option: true,
-                  attribute: {
-                    with: {
-                      group: true,
-                    },
+        },
+        variants: {
+          with: {
+            variantImages: {
+              with: {
+                image: {
+                  columns: {
+                    id: true,
+                    url: true,
                   },
                 },
               },
             },
-          },
-          images: true,
-          attributeValues: {
-            with: {
-              option: true,
-              attribute: {
-                with: {
-                  group: true,
+            attributeValues: {
+              with: {
+                option: true,
+                attribute: {
+                  with: {
+                    group: true,
+                  },
                 },
               },
             },
           },
         },
+        images: true,
+        attributeValues: {
+          with: {
+            option: true,
+            attribute: {
+              with: {
+                group: true,
+              },
+            },
+          },
+        },
+        discountEvents: {
+          with: {
+            event: true,
+          },
+        },
+      },
+    });
+    if (!product) {
+      throw new NotFoundException(`Product not found`);
+    }
+    return product;
+  }
+
+  async getProductOption(product_id: string) {
+    const optionsData = await this.db
+      .select({
+        optionValue: attribute_options.value,
+        optionId: attribute_options.id,
+        attributeName: attributes.name,
+        attributeId: attributes.id,
+        type: attributes.type,
+        filterable: attributes.filterable,
+        unit: attributes.unit,
+        sortOrder: attributes.sortOrder,
+        groupId: attribute_groups.id,
+        groupName: attribute_groups.name,
+      })
+      .from(attributes)
+      .innerJoin(attribute_groups, eq(attributes.groupId, attribute_groups.id))
+      .innerJoin(
+        attribute_options,
+        eq(attributes.id, attribute_options.attributeId),
+      )
+      .innerJoin(
+        variant_attribute_values,
+        and(
+          eq(variant_attribute_values.attributeId, attributes.id),
+          eq(variant_attribute_values.optionId, attribute_options.id),
+        ),
+      )
+      .innerJoin(
+        product_variants,
+        eq(variant_attribute_values.variantId, product_variants.id),
+      )
+      .where(
+        and(
+          eq(product_variants.productId, product_id),
+          eq(attributes.isVariant, true),
+        ),
+      )
+      .groupBy(attributes.id, attribute_groups.id, attribute_options.id);
+
+    return optionsData;
+  }
+
+  async getProduct(product_id: string): Promise<GetProductResponseDto> {
+    try {
+      const product = await this.getProductDetail(product_id);
+      const [optionsData, variantSale] = await Promise.all([
+        this.getProductOption(product.id),
+        this.promotionService.getProductVariantWithDiscountPrice(product.id),
+      ]);
+      const variantPriceMap = new Map<string, (typeof variantSale)[0]>();
+      variantSale.forEach((item) => {
+        variantPriceMap.set(item.variantId, item);
       });
-      if (!product) {
-        throw new NotFoundException(`Product not found`);
-      }
-      const optionsData = await this.db
-        .select({
-          optionValue: attribute_options.value,
-          optionId: attribute_options.id,
-          attributeName: attributes.name,
-          attributeId: attributes.id,
-          type: attributes.type,
-          filterable: attributes.filterable,
-          unit: attributes.unit,
-          sortOrder: attributes.sortOrder,
-          groupId: attribute_groups.id,
-          groupName: attribute_groups.name,
-        })
-        .from(attributes)
-        .innerJoin(
-          attribute_groups,
-          eq(attributes.groupId, attribute_groups.id),
-        )
-        .innerJoin(
-          attribute_options,
-          eq(attributes.id, attribute_options.attributeId),
-        )
-        .innerJoin(
-          variant_attribute_values,
-          and(
-            eq(variant_attribute_values.attributeId, attributes.id),
-            eq(variant_attribute_values.optionId, attribute_options.id),
-          ),
-        )
-        .innerJoin(
-          product_variants,
-          eq(variant_attribute_values.variantId, product_variants.id),
-        )
-        .where(
-          and(
-            eq(product_variants.productId, product?.id || ''),
-            eq(attributes.isVariant, true),
-          ),
-        )
-        .groupBy(attributes.id, attribute_groups.id, attribute_options.id);
 
       const variant_option = optionsData.reduce(
         (acc, curr) => {
@@ -313,7 +338,6 @@ export class ProductService {
           order: number;
         }[],
       );
-
       const groupedAttributesRecord = product.attributeValues.reduce(
         (acc, curr) => {
           const groupName = curr.attribute?.group?.name || 'Khác';
@@ -374,9 +398,15 @@ export class ProductService {
           value: curr.value || curr.option?.value || '',
         }));
 
+        const saleData = variantPriceMap.get(variant.id);
+
         return {
           ...restVariant,
           attributes,
+          finalPrice: saleData?.finalPrice ?? variant.price,
+          basePrice: variant.price,
+          discountPercentage: saleData?.discountPercentage ?? null,
+          promoStockLeft: saleData?.promoStockLeft ?? null,
         };
       });
 
@@ -409,98 +439,15 @@ export class ProductService {
   async getAllProduct(
     query: ProductQueryDto,
   ): Promise<PaginatedGetProductListResponseDto> {
-    // slug first
-    const { offset, limit, q, filter, category } = query;
-    const buildWhereConditions = (productsTable: typeof products) => {
-      const conditions: SQL[] = [];
-      if (filter && Object.keys(filter).length > 0 && !category) {
-        throw new BadRequestException(
-          'Category is required when filter is present',
-        );
-      }
-      if (category) {
-        const childs = this.cache.getAllDescendants(category);
-        const categoryIds = [category, ...childs.map((c) => c.id)];
-        // sort by price order
-        conditions.push(
-          exists(
-            this.db
-              .select()
-              .from(categories)
-              .where(
-                and(
-                  eq(categories.id, productsTable.categoryId),
-                  inArray(categories.id, categoryIds),
-                ),
-              ),
-          ),
-        );
-      }
-      if (q) {
-        const searchCondition = or(ilike(productsTable.name, `%${q}%`));
-        if (searchCondition) {
-          conditions.push(searchCondition);
-        }
-      }
-      if (filter) {
-        Object.entries(filter).forEach(([attributeName, values]) => {
-          if (!Array.isArray(values) || values.length === 0) return;
-
-          if (attributeName === 'price') {
-            const [minPrice, maxPrice] = values;
-            // safely convert number to avoid errors
-            const minPriceNum = Number(minPrice) || 0;
-            const maxPriceNum = Number(maxPrice) || 2_147_483_647;
-            conditions.push(
-              exists(
-                this.db
-                  .select()
-                  .from(product_variants)
-                  .where(
-                    and(
-                      eq(product_variants.productId, productsTable.id),
-                      gte(product_variants.price, minPriceNum),
-                      lte(product_variants.price, maxPriceNum),
-                    ),
-                  ),
-              ),
-            );
-          } else {
-            conditions.push(
-              exists(
-                this.db
-                  .select()
-                  .from(product_attribute_values)
-                  .innerJoin(
-                    attributes,
-                    eq(product_attribute_values.attributeId, attributes.id),
-                  )
-                  .where(
-                    and(
-                      eq(product_attribute_values.productId, productsTable.id),
-                      eq(attributes.id, attributeName),
-                      inArray(
-                        product_attribute_values.optionId,
-                        values.map((v) => v.toString()),
-                      ),
-                    ),
-                  ),
-              ),
-            );
-          }
-        });
-      }
-      return conditions.length > 0 ? and(...conditions) : undefined;
-    };
+    const { offset, limit } = query;
     const [totalCountResult, data] = await Promise.all([
-      // Apply the EXACT SAME conditions to the count query!
       this.db
         .select({ value: count() })
         .from(products)
-        .where(buildWhereConditions(products)),
+        .where(this.buildProductWhereConditions(query)),
 
       this.db.query.products.findMany({
-        where: () => buildWhereConditions(products),
+        where: this.buildProductWhereConditions(query),
         columns: {
           description: false,
         },
@@ -520,6 +467,11 @@ export class ProductService {
             columns: {
               url: true,
               isMain: true,
+            },
+          },
+          discountEvents: {
+            with: {
+              event: true,
             },
           },
         },
@@ -542,14 +494,110 @@ export class ProductService {
     ]);
 
     const totalCount = totalCountResult[0]?.value ?? 0;
+    const dataWithEvents = data.map(({ category, ...product }) => {
+      const now = new Date();
+      return {
+        ...product,
+        categorySlug: category.slug,
+        discountEvents: product.discountEvents.filter((de) => {
+          const event = de.event;
+          if (!event || !event.isActive) return false;
+          if (event.startDate > now) return false;
+          if (event.endDate && event.endDate < now) return false;
+          return true;
+        }),
+      };
+    });
 
     return {
       count: totalCount,
-      data: data.map(({ category, ...product }) => ({
-        ...product,
-        categorySlug: category.slug,
-      })),
+      //@ts-ignore
+      data: dataWithEvents,
     };
+  }
+
+  private buildProductWhereConditions(query: ProductQueryDto) {
+    const { q, filter, category } = query;
+    const conditions: SQL[] = [];
+
+    if (filter && Object.keys(filter).length > 0 && !category) {
+      throw new BadRequestException(
+        'Category is required when filter is present',
+      );
+    }
+
+    if (category) {
+      const childs = this.cache.getAllDescendants(category);
+      const categoryIds = [category, ...childs.map((c) => c.id)];
+      conditions.push(
+        exists(
+          this.db
+            .select()
+            .from(categories)
+            .where(
+              and(
+                eq(categories.id, products.categoryId),
+                inArray(categories.id, categoryIds),
+              ),
+            ),
+        ),
+      );
+    }
+
+    if (q) {
+      const searchCondition = or(ilike(products.name, `%${q}%`));
+      if (searchCondition) conditions.push(searchCondition);
+    }
+
+    if (filter) {
+      Object.entries(filter).forEach(([attributeName, values]) => {
+        if (!Array.isArray(values) || values.length === 0) return;
+
+        if (attributeName === 'price') {
+          const [minPrice, maxPrice] = values;
+          const minPriceNum = Number(minPrice) || 0;
+          const maxPriceNum = Number(maxPrice) || 2_147_483_647;
+          conditions.push(
+            exists(
+              this.db
+                .select()
+                .from(product_variants)
+                .where(
+                  and(
+                    eq(product_variants.productId, products.id),
+                    gte(product_variants.price, minPriceNum),
+                    lte(product_variants.price, maxPriceNum),
+                  ),
+                ),
+            ),
+          );
+        } else {
+          conditions.push(
+            exists(
+              this.db
+                .select()
+                .from(product_attribute_values)
+                .innerJoin(
+                  attributes,
+                  eq(product_attribute_values.attributeId, attributes.id),
+                )
+                .where(
+                  and(
+                    eq(product_attribute_values.productId, products.id),
+                    eq(attributes.id, attributeName),
+                    inArray(
+                      product_attribute_values.optionId,
+                      values.map((v) => v.toString()),
+                    ),
+                  ),
+                ),
+            ),
+          );
+        }
+      });
+    }
+
+    return conditions.length > 0 ? and(...conditions) : undefined;
   }
 
   async updateProductTransaction(
@@ -573,7 +621,7 @@ export class ProductService {
         .update(products)
         .set({
           name: updateProductDTO.name,
-          description: updateProductDTO.description,
+          description: updateProductDTO.description as string | undefined,
           categoryId: updateProductDTO.categoryId,
           seoMetadata: updateProductDTO.seoMetadata,
         })
@@ -690,10 +738,10 @@ export class ProductService {
         })();
       }
 
-      // parrell call for faster speed
+      // parallel call for faster speed
       await Promise.all([updateProduct, updateAttributes, updateImages]);
 
-      // ── 4. Variants ────────────────────────────────────────────────────────
+      // ─variant
       if (product.variants && updateProductDTO.variants) {
         const originalMap = new Map(product.variants.map((v) => [v.id, v]));
         const incomingIds = new Set(
@@ -708,8 +756,8 @@ export class ProductService {
         const deleteVariants =
           toDelete.length > 0
             ? tx
-              .delete(product_variants)
-              .where(inArray(product_variants.id, toDelete))
+                .delete(product_variants)
+                .where(inArray(product_variants.id, toDelete))
             : Promise.resolve();
 
         // Process all variants in parallel
@@ -731,8 +779,6 @@ export class ProductService {
                   })
                   .where(eq(product_variants.id, variantId)),
               ];
-
-              // ✅ Upsert + targeted delete inside same async block — no race condition
               if (newData.attributes !== undefined) {
                 const variantAttrSync = async () => {
                   const incomingAttrIds = newData.attributes!.map(
@@ -804,26 +850,26 @@ export class ProductService {
               await Promise.all([
                 newData.attributes?.length
                   ? tx.insert(variant_attribute_values).values(
-                    newData.attributes.map((attr) => ({
-                      variantId,
-                      attributeId: attr.attributeId,
-                      optionId: attr.optionId,
-                      value: attr.value,
-                    })),
-                  )
+                      newData.attributes.map((attr) => ({
+                        variantId,
+                        attributeId: attr.attributeId,
+                        optionId: attr.optionId,
+                        value: attr.value,
+                      })),
+                    )
                   : Promise.resolve(),
 
                 newData.images?.length
                   ? tx.insert(variant_images).values(
-                    newData.images.map((url, index) => {
-                      const imageId = urlToImageId.get(url);
-                      if (!imageId)
-                        throw new InternalServerErrorException(
-                          `Image ID not found for URL: ${url}`,
-                        );
-                      return { variantId, imageId, isMain: index === 0 };
-                    }),
-                  )
+                      newData.images.map((url, index) => {
+                        const imageId = urlToImageId.get(url);
+                        if (!imageId)
+                          throw new InternalServerErrorException(
+                            `Image ID not found for URL: ${url}`,
+                          );
+                        return { variantId, imageId, isMain: index === 0 };
+                      }),
+                    )
                   : Promise.resolve(),
               ]);
             }
@@ -848,10 +894,12 @@ export class ProductService {
       await tx.delete(products).where(eq(products.id, id));
     });
   }
+  
   private generateSlug(name: string): string {
     return name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
   }
+  
 }

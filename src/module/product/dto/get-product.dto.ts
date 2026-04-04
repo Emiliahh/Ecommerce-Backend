@@ -7,8 +7,15 @@ import {
   product_images,
   variant_images,
   categories,
+  discount_events,
+  discount_event_products,
 } from 'src/database/schema';
 import { IPaginatedRes } from 'src/types/IPaginatedRes';
+/** Converts Date objects to ISO strings for JSON Schema compatibility */
+const dateStr = z.preprocess(
+  (v) => (v instanceof Date ? v.toISOString() : v),
+  z.string(),
+);
 
 // 1. Automatically generate base schemas for reading
 export const selectProductSchema = createSelectSchema(products).omit({
@@ -27,6 +34,30 @@ const selectCategorySchema = createSelectSchema(categories).omit({
   level: true,
 });
 const selectVariantImageSchema = createSelectSchema(variant_images);
+const selectDiscountEventSchema = createSelectSchema(discount_events)
+  .omit({
+    startDate: true,
+    endDate: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    startDate: dateStr,
+    endDate: dateStr.nullable(),
+    createdAt: dateStr,
+    updatedAt: dateStr,
+  });
+const selectDiscountEventProductSchema = createSelectSchema(
+  discount_event_products,
+)
+  .omit({
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    createdAt: dateStr,
+    updatedAt: dateStr,
+  });
 
 const AttributeGroupSchema = z.object({
   groupName: z.string(),
@@ -43,7 +74,6 @@ const AttributeGroupSchema = z.object({
   ),
 });
 
-// schema for get product detail
 const GetProductResponseSchema = selectProductSchema.extend({
   categoryPath: z.array(selectCategorySchema),
   images: z.array(selectImageSchema),
@@ -75,6 +105,10 @@ const GetProductResponseSchema = selectProductSchema.extend({
           value: z.string(),
         }),
       ),
+      finalPrice: z.number().optional(),
+      basePrice: z.number().optional(),
+      discountPercentage: z.number().nullable().optional(),
+      promoStockLeft: z.number().nullable().optional(),
     }),
   ),
 });
@@ -100,6 +134,11 @@ const GetProductListResponseSchema = selectProductSchema
     images: z.array(selectImageSchema.pick({ url: true, isMain: true })),
     variants: z.array(selectVariantSchema.pick({ price: true, sku: true })),
     categorySlug: z.string(),
+    discountEvents: z.array(
+      selectDiscountEventProductSchema.extend({
+        event: selectDiscountEventSchema.nullable(),
+      }),
+    ),
   });
 
 export class GetProductListResponseDto extends createZodDto(

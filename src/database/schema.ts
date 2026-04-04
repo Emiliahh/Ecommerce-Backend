@@ -12,6 +12,7 @@ import {
   boolean,
   jsonb,
   index,
+  bigint,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { pgEnum } from 'drizzle-orm/pg-core';
@@ -285,7 +286,7 @@ export const product_variants = pgTable(
       })
       .notNull(),
     sku: varchar('sku', { length: 255 }).notNull(),
-    price: integer('price').notNull(), // Store as integer (cents or raw VND)
+    price: bigint('price', { mode: 'number' }).notNull(),
     stock: integer('stock').notNull().default(0),
     // name like for egs: iphone 17 pro max 256G CAM VŨ TRỤ
     name: text('name'),
@@ -400,10 +401,14 @@ export const discount_events = pgTable('discount_events', {
  */
 export const discount_event_products = pgTable('discount_event_products', {
   eventId: uuid('event_id')
-    .references(() => discount_events.id)
+    .references(() => discount_events.id, {
+      onDelete: 'cascade',
+    })
     .notNull(),
   productId: uuid('product_id')
-    .references(() => products.id)
+    .references(() => products.id, {
+      onDelete: 'cascade',
+    })
     .notNull(),
   discountPercentage: integer('discount_percentage').notNull().default(0),
   // How many products are discounted
@@ -449,6 +454,8 @@ export const customer_orders = pgTable(
     discountAmount: integer('discount_amount').notNull().default(0),
     shippingFee: integer('shipping_fee').notNull().default(0),
     customerNote: text('customer_note'),
+    // this will e the look up code 
+    orderCode: text('order_code'),
 
     // Snapshot of shipping info so past orders aren't affected if user modifies/deletes their address book
     shippingAddress: text('shipping_address'),

@@ -1,4 +1,4 @@
-import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+import { createSelectSchema } from 'drizzle-zod';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { discount_events_groups } from 'src/database/schema';
@@ -9,8 +9,6 @@ const dateStr = z.preprocess(
   (v) => (v instanceof Date ? v.toISOString() : v),
   z.string(),
 );
-
-// ── Base ─────────────────────────────────────────────────────────
 export const selectEventGroupSchema = createSelectSchema(discount_events_groups)
   .omit({
     startDate: true,
@@ -25,7 +23,6 @@ export const selectEventGroupSchema = createSelectSchema(discount_events_groups)
     updatedAt: dateStr,
   });
 
-// ── Create ───────────────────────────────────────────────────────
 const createEventGroupSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().nullable(),
@@ -36,13 +33,11 @@ const createEventGroupSchema = z.object({
   endDate: z.string().min(1, 'endDate required'),
 });
 
-export class CreateEventGroupDto extends createZodDto(createEventGroupSchema) { }
+export class CreateEventGroupDto extends createZodDto(createEventGroupSchema) {}
 
-// ── Update ───────────────────────────────────────────────────────
 const updateEventGroupSchema = createEventGroupSchema.partial();
-export class UpdateEventGroupDto extends createZodDto(updateEventGroupSchema) { }
+export class UpdateEventGroupDto extends createZodDto(updateEventGroupSchema) {}
 
-// ── Query ────────────────────────────────────────────────────────
 const getEventGroupQuerySchema = paginateSchema.extend({
   isActive: z
     .string()
@@ -51,15 +46,14 @@ const getEventGroupQuerySchema = paginateSchema.extend({
 });
 export class GetEventGroupQueryDto extends createZodDto(
   getEventGroupQuerySchema,
-) { }
+) {}
 
-// ── Response ─────────────────────────────────────────────────────
 const getEventGroupResponseSchema = selectEventGroupSchema.extend({
   eventsCount: z.number().optional(),
 });
 export class GetEventGroupResponseDto extends createZodDto(
   getEventGroupResponseSchema,
-) { }
+) {}
 
 const paginatedEventGroupResponseSchema = z.object({
   count: z.number(),
@@ -67,4 +61,4 @@ const paginatedEventGroupResponseSchema = z.object({
 });
 export class PaginatedEventGroupResponseDto extends createZodDto(
   paginatedEventGroupResponseSchema,
-) { }
+) {}

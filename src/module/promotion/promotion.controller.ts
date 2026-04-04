@@ -9,11 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse } from '@nestjs/swagger';
 import { PromotionService } from './promotion.service';
 import { RoleGuard } from 'src/guard/role.guard';
 import { Roles } from 'src/decorator/role';
@@ -27,7 +23,6 @@ import {
   GetEventGroupResponseDto,
 } from './dto/event-group.dto';
 
-// ── Discount Event DTOs ───────────────────────────────────────────
 import {
   CreateDiscountEventDto,
   UpdateDiscountEventDto,
@@ -36,13 +31,11 @@ import {
   GetDiscountEventResponseDto,
 } from './dto/discount-event.dto';
 
-// ── Event Product DTOs ────────────────────────────────────────────
 import {
   AddProductToEventDto,
   UpdateEventProductDto,
+  GetEventProductResponseDto,
 } from './dto/event-product.dto';
-
-// ── Promo Code DTOs ───────────────────────────────────────────────
 import {
   CreatePromoCodeDto,
   UpdatePromoCodeDto,
@@ -50,26 +43,24 @@ import {
   PaginatedPromoCodeResponseDto,
   GetPromoCodeResponseDto,
 } from './dto/promo-code.dto';
+import { Public } from 'src/decorator/isPublic';
 
 @ApiTags('Promotion')
 @Controller('promotion')
 export class PromotionController {
   constructor(private readonly promotionService: PromotionService) { }
-
-  // ─────────────────────────────────────────────────────────────────
-  // EVENT GROUPS
-  // ─────────────────────────────────────────────────────────────────
-
   @Get('event-groups')
+  @Public()
   @ApiOperation({ summary: 'List all event groups (paginated)' })
-  @ApiResponse({ type: PaginatedEventGroupResponseDto })
+  @ApiOkResponse({ type: PaginatedEventGroupResponseDto })
   getEventGroups(@Query() query: GetEventGroupQueryDto) {
     return this.promotionService.getEventGroups(query);
   }
 
   @Get('event-groups/:id')
+  @Public()
   @ApiOperation({ summary: 'Get event group by id (with events)' })
-  @ApiResponse({ type: GetEventGroupResponseDto })
+  @ApiOkResponse({ type: GetEventGroupResponseDto })
   getEventGroupById(@Param('id') id: string) {
     return this.promotionService.getEventGroupById(id);
   }
@@ -88,10 +79,7 @@ export class PromotionController {
   @UseGuards(RoleGuard)
   @ApiOperation({ summary: 'Update an event group (Admin)' })
   @ApiResponse({ type: GetEventGroupResponseDto })
-  updateEventGroup(
-    @Param('id') id: string,
-    @Body() dto: UpdateEventGroupDto,
-  ) {
+  updateEventGroup(@Param('id') id: string, @Body() dto: UpdateEventGroupDto) {
     return this.promotionService.updateEventGroup(id, dto);
   }
 
@@ -103,20 +91,17 @@ export class PromotionController {
     return this.promotionService.deleteEventGroup(id);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // DISCOUNT EVENTS
-  // ─────────────────────────────────────────────────────────────────
-
   @Get('events')
+  @Public()
   @ApiOperation({ summary: 'List discount events (paginated)' })
-  @ApiResponse({ type: PaginatedDiscountEventResponseDto })
+  @ApiOkResponse({ type: PaginatedDiscountEventResponseDto })
   getDiscountEvents(@Query() query: GetDiscountEventQueryDto) {
     return this.promotionService.getDiscountEvents(query);
   }
 
   @Get('events/:id')
   @ApiOperation({ summary: 'Get discount event by id (with products)' })
-  @ApiResponse({ type: GetDiscountEventResponseDto })
+  @ApiOkResponse({ type: GetDiscountEventResponseDto })
   getDiscountEventById(@Param('id') id: string) {
     return this.promotionService.getDiscountEventById(id);
   }
@@ -125,7 +110,7 @@ export class PromotionController {
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
   @ApiOperation({ summary: 'Create a discount event (Admin)' })
-  @ApiResponse({ type: GetDiscountEventResponseDto })
+  @ApiOkResponse({ type: GetDiscountEventResponseDto })
   createDiscountEvent(@Body() dto: CreateDiscountEventDto) {
     return this.promotionService.createDiscountEvent(dto);
   }
@@ -133,8 +118,10 @@ export class PromotionController {
   @Patch('events/:id')
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
-  @ApiOperation({ summary: 'Update a discount event — also used to end it early (Admin)' })
-  @ApiResponse({ type: GetDiscountEventResponseDto })
+  @ApiOperation({
+    summary: 'Update a discount event — also used to end it early (Admin)',
+  })
+  @ApiOkResponse({ type: GetDiscountEventResponseDto })
   updateDiscountEvent(
     @Param('id') id: string,
     @Body() dto: UpdateDiscountEventDto,
@@ -150,12 +137,10 @@ export class PromotionController {
     return this.promotionService.deleteDiscountEvent(id);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // EVENT PRODUCTS
-  // ─────────────────────────────────────────────────────────────────
-
   @Get('events/:id/products')
+  @Public()
   @ApiOperation({ summary: 'List products in a discount event' })
+  @ApiOkResponse({ type: [GetEventProductResponseDto] })
   getEventProducts(@Param('id') id: string) {
     return this.promotionService.getEventProducts(id);
   }
@@ -194,15 +179,11 @@ export class PromotionController {
     return this.promotionService.removeProductFromEvent(eventId, productId);
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // PROMO CODES
-  // ─────────────────────────────────────────────────────────────────
-
   @Get('promo-codes')
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
   @ApiOperation({ summary: 'List promo codes (Admin, paginated, filterable)' })
-  @ApiResponse({ type: PaginatedPromoCodeResponseDto })
+  @ApiOkResponse({ type: PaginatedPromoCodeResponseDto })
   getPromoCodes(@Query() query: GetPromoCodeQueryDto) {
     return this.promotionService.getPromoCodes(query);
   }
@@ -211,7 +192,7 @@ export class PromotionController {
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
   @ApiOperation({ summary: 'Get promo code by id (Admin)' })
-  @ApiResponse({ type: GetPromoCodeResponseDto })
+  @ApiOkResponse({ type: GetPromoCodeResponseDto })
   getPromoCodeById(@Param('id') id: string) {
     return this.promotionService.getPromoCodeById(id);
   }
@@ -220,7 +201,7 @@ export class PromotionController {
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
   @ApiOperation({ summary: 'Create a promo code (Admin)' })
-  @ApiResponse({ type: GetPromoCodeResponseDto })
+  @ApiOkResponse({ type: GetPromoCodeResponseDto })
   createPromoCode(@Body() dto: CreatePromoCodeDto) {
     return this.promotionService.createPromoCode(dto);
   }
@@ -228,12 +209,11 @@ export class PromotionController {
   @Patch('promo-codes/:id')
   @Roles('admin', 'superadmin')
   @UseGuards(RoleGuard)
-  @ApiOperation({ summary: 'Update a promo code — includes toggle isActive (Admin)' })
-  @ApiResponse({ type: GetPromoCodeResponseDto })
-  updatePromoCode(
-    @Param('id') id: string,
-    @Body() dto: UpdatePromoCodeDto,
-  ) {
+  @ApiOperation({
+    summary: 'Update a promo code — includes toggle isActive (Admin)',
+  })
+  @ApiOkResponse({ type: GetPromoCodeResponseDto })
+  updatePromoCode(@Param('id') id: string, @Body() dto: UpdatePromoCodeDto) {
     return this.promotionService.updatePromoCode(id, dto);
   }
 

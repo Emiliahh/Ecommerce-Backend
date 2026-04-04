@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { type DB, DRIZZLE } from 'src/database/dizzle.provider';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -11,6 +12,7 @@ import {
   customer_orders_items,
   order_logs,
   payment_methods,
+  payment_transaction_logs,
   payments,
   product_variants,
   variant_images,
@@ -20,15 +22,38 @@ import { GetOrderQueryDto } from './dto/get-order.dto';
 import { CreateOrderLogDto } from './dto/create-order-log.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { Subject } from 'rxjs';
-
+import { PaymentService } from '../payment/payment.service';
+import { WebhookData } from '@payos/node';
+const acceptedPaymentMethod = ['payos', 'cod'];
 @Injectable()
 export class OrderService {
   public readonly orderEvents$ = new Subject<{ data: any }>();
 
-  constructor(@Inject(DRIZZLE) private readonly db: DB) { }
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DB,
+    @Inject(forwardRef(() => PaymentService))
+    private readonly paymentService: PaymentService,
+  ) {}
+  async checkMethodExist(code: string) {
+    if (!acceptedPaymentMethod.includes(code)) {
+      throw new BadRequestException('Payment method not found');
+    }
+    const method = await this.db.query.payment_methods.findFirst({
+      where: eq(payment_methods.code, code),
+    });
+    if (!method) {
+      await this.db.insert(payment_methods).values({
+        code: code,
+        name: code,
+        isActive: true,
+        config: {},
+      });
+    }
+  }
   async createOrder(userID: string, dto: CreateOrderDto) {
+    await this.checkMethodExist(dto.paymentMethodCode);
     return await this.db.transaction(async (tx) => {
-      const { items, ...orderData } = dto;
+      const { items, paymentMethodCode, ...orderData } = dto;
 
       const priceMap = new Map<string, number>();
       const variantIds = items.map((item) => item.variantId);
@@ -44,11 +69,14 @@ export class OrderService {
         const price = priceMap.get(item.variantId) || 0;
         return sum + price * item.quantity;
       }, 0);
+
+      const orderCode = this.generateSecureCode();
       const order = await tx
         .insert(customer_orders)
         .values({
           userId: userID,
           total,
+          orderCode,
           ...orderData,
         })
         .returning();
@@ -60,20 +88,46 @@ export class OrderService {
           price: priceMap.get(item.variantId) || 0,
         })),
       );
-      await this.addLog({
-        orderId: order[0].id,
-        note: `Tạo đơn hàng`,
-        toStatus: 'pending',
-      }, tx);
+      await this.addLog(
+        {
+          orderId: order[0].id,
+          note: `Tạo đơn hàng`,
+          toStatus: 'pending',
+        },
+        tx,
+      );
       const paymentMethod = await this.getPaymentMethod(dto.paymentMethodCode);
       if (!paymentMethod) {
         throw new BadRequestException('Payment method not found');
+      }
+      let paylink = '';
+      const item = items.map((item) => {
+        const variant = data.find((v) => v.id === item.variantId);
+        return {
+          name: variant?.name || '',
+          quantity: item.quantity || 0,
+          price: variant?.price || 0,
+        };
+      });
+      let transactionId = orderCode;
+      if (paymentMethod.code === 'payos') {
+        // number
+        const intcode = Math.floor(Math.random() * 1000000) + 1;
+        const res = await this.paymentService.createPaymentLink(
+          intcode,
+          orderCode,
+          total,
+          item,
+        );
+        paylink = res.checkoutUrl;
+        transactionId = intcode.toString();
       }
       await tx.insert(payments).values({
         orderId: order[0].id,
         paymentMethodId: paymentMethod.id,
         amount: total,
         status: 'pending',
+        transactionId: transactionId,
       });
 
       this.orderEvents$.next({
@@ -83,7 +137,10 @@ export class OrderService {
         },
       });
 
-      return order[0];
+      return {
+        order: order[0],
+        paylink,
+      };
     });
   }
   async getPaymentMethod(code: string) {
@@ -180,7 +237,8 @@ export class OrderService {
       conditions.push(eq(customer_orders.status, status));
     }
 
-    const whereCondition = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereCondition =
+      conditions.length > 0 ? and(...conditions) : undefined;
 
     const data = await this.db.query.customer_orders.findMany({
       where: whereCondition,
@@ -196,15 +254,15 @@ export class OrderService {
                   columns: {
                     description: false,
                     seoMetadata: false,
-                  }
+                  },
                 },
                 variantImages: {
                   with: {
                     image: {
                       columns: {
                         url: true,
-                      }
-                    }
+                      },
+                    },
                   },
                   where: eq(variant_images.isMain, true),
                 },
@@ -270,5 +328,50 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
     return order;
+  }
+  // for payment
+  generateSecureCode(length = 9) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+
+    return Array.from(array)
+      .map((x) => chars[x % chars.length])
+      .join('');
+  }
+  async updatePaymentCode(
+    orderCode: string,
+    data: WebhookData,
+    status: string,
+  ) {
+    const order = await this.db.query.customer_orders.findFirst({
+      where: eq(customer_orders.orderCode, orderCode),
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    const payment = await this.db.query.payments.findFirst({
+      where: eq(payments.orderId, order.id),
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    await this.db.insert(payment_transaction_logs).values({
+      status: status,
+      action: status,
+      paymentId: payment.id,
+      payload: data,
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    const updatedPayment = await this.db
+      .update(payments)
+      .set({
+        transactionId: orderCode,
+      })
+      .where(eq(payments.id, payment.id))
+      .returning();
+    return updatedPayment[0];
   }
 }

@@ -11,8 +11,25 @@ import {
   discount_event_products,
   promo_code,
   products,
+  product_variants,
 } from 'src/database/schema';
-import { eq, and, sql, ilike, count, avg, sum, SQL } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  sql,
+  ilike,
+  count,
+  avg,
+  sum,
+  SQL,
+  lte,
+  gte,
+  or,
+  isNull,
+  inArray,
+  exists,
+  ne,
+} from 'drizzle-orm';
 import {
   CreateEventGroupDto,
   UpdateEventGroupDto,
@@ -33,54 +50,31 @@ import {
   GetPromoCodeQueryDto,
 } from './dto/promo-code.dto';
 
+
 @Injectable()
 export class PromotionService {
-  constructor(@Inject(DRIZZLE) private readonly db: DB) {}
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // EVENT GROUPS
-  // ─────────────────────────────────────────────────────────────────────────────
+  constructor(@Inject(DRIZZLE) private readonly db: DB) { }
 
   async getEventGroups(query: GetEventGroupQueryDto) {
     const { limit, offset, isActive } = query;
+
     const conditions: SQL[] = [];
     if (isActive !== undefined) {
       conditions.push(eq(discount_events_groups.isActive, isActive));
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-    // Get groups with event count
-    const data = await this.db
-      .select({
-        id: discount_events_groups.id,
-        name: discount_events_groups.name,
-        description: discount_events_groups.description,
-        order: discount_events_groups.order,
-        bannerImage: discount_events_groups.bannerImage,
-        isActive: discount_events_groups.isActive,
-        startDate: discount_events_groups.startDate,
-        endDate: discount_events_groups.endDate,
-        createdAt: discount_events_groups.createdAt,
-        updatedAt: discount_events_groups.updatedAt,
-        eventsCount: count(discount_events.id),
-      })
-      .from(discount_events_groups)
-      .leftJoin(
-        discount_events,
-        eq(discount_events.groupId, discount_events_groups.id),
-      )
-      .where(where)
-      .groupBy(discount_events_groups.id)
-      .orderBy(discount_events_groups.order)
-      .limit(limit ?? 10)
-      .offset(offset ?? 0);
+    const groups = await this.db.query.discount_events_groups.findMany({
+      where,
+      limit: limit ?? 10,
+      offset: offset ?? 0,
+    });
 
     const countRes = await this.db
       .select({ count: sql`count(*)` })
       .from(discount_events_groups)
       .where(where);
 
-    return { count: Number(countRes[0].count), data };
+    return { count: Number(countRes[0].count), data: groups };
   }
 
   async getEventGroupById(id: string) {
@@ -129,12 +123,7 @@ export class PromotionService {
       .where(eq(discount_events_groups.id, id));
     return { message: 'Deleted' };
   }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // DISCOUNT EVENTS
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /** Compute live/upcoming/ended status from dates + isActive flag */
+  // discount event
   private computeEventStatus(
     startDate: Date,
     endDate: Date | null,
@@ -156,8 +145,6 @@ export class PromotionService {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const now = new Date();
-
-    // Build result with aggregated stats from event products
     const rows = await this.db
       .select({
         id: discount_events.id,
@@ -214,6 +201,7 @@ export class PromotionService {
     return { count: Number(countRes[0].count), data };
   }
 
+  // get discount event by id
   async getDiscountEventById(id: string) {
     const event = await this.db.query.discount_events.findFirst({
       where: eq(discount_events.id, id),
@@ -273,45 +261,90 @@ export class PromotionService {
       where: eq(discount_events.id, id),
     });
     if (!event) throw new NotFoundException('Discount event not found');
-    await this.db
-      .delete(discount_events)
-      .where(eq(discount_events.id, id));
+    await this.db.delete(discount_events).where(eq(discount_events.id, id));
     return { message: 'Deleted' };
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // EVENT PRODUCTS
-  // ─────────────────────────────────────────────────────────────────────────────
-
+  // event products
   async getEventProducts(eventId: string) {
-    return this.db.query.discount_event_products.findMany({
-      where: eq(discount_event_products.eventId, eventId),
-      with: { product: { columns: { id: true, name: true, slug: true } } },
+    return await this.db.query.products.findMany({
+      where: exists(
+        this.db
+          .select()
+          .from(discount_event_products)
+          .where(
+            and(
+              eq(discount_event_products.productId, products.id),
+              eq(discount_event_products.eventId, eventId),
+            ),
+          ),
+      ),
+      columns: {
+        description: false,
+      },
+      with: {
+        category: {
+          columns: { slug: true },
+        },
+        variants: {
+          columns: { price: true, sku: true },
+        },
+        images: {
+          columns: { url: true, isMain: true },
+        },
+        discountEvents: {
+          where: eq(discount_event_products.eventId, eventId),
+        },
+      },
     });
   }
+  async checkOverlap(productId: string, startDate: Date, endDate?: Date | null, excludeEventId?: string) {
+    const overlapping = await this.db.query.discount_event_products.findFirst({
+      where: and(
+        eq(discount_event_products.productId, productId),
+        exists(
+          this.db
+            .select()
+            .from(discount_events)
+            .where(
+              and(
+                eq(discount_events.id, discount_event_products.eventId),
+                eq(discount_events.isActive, true),
+                excludeEventId
+                  ? ne(discount_events.id, excludeEventId)
+                  : undefined,
+                lte(discount_events.startDate, endDate ?? new Date("9999-12-31")),
+                or(
+                  isNull(discount_events.endDate),
+                  gte(discount_events.endDate, startDate),
+                ),
+              ),
+            ),
+        ),
+      ),
+    });
 
+    return !!overlapping;
+  }
   async addProductToEvent(eventId: string, dto: AddProductToEventDto) {
-    // Check event exists
     const event = await this.db.query.discount_events.findFirst({
       where: eq(discount_events.id, eventId),
     });
     if (!event) throw new NotFoundException('Discount event not found');
-
-    // Check product exists
+    let overlap = await this.checkOverlap(dto.productId, event.startDate, event.endDate, eventId);
     const product = await this.db.query.products.findFirst({
       where: eq(products.id, dto.productId),
     });
     if (!product) throw new NotFoundException('Product not found');
+    if (overlap) throw new ConflictException(`Product ${product.name} is already in another active event ${event.name}`);
 
-    // Check duplicate
     const existing = await this.db.query.discount_event_products.findFirst({
       where: and(
         eq(discount_event_products.eventId, eventId),
         eq(discount_event_products.productId, dto.productId),
       ),
     });
-    if (existing)
-      throw new ConflictException('Product already in this event');
+    if (existing) throw new ConflictException('Product already in this event');
 
     const [row] = await this.db
       .insert(discount_event_products)
@@ -365,11 +398,6 @@ export class PromotionService {
       );
     return { message: 'Removed' };
   }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // PROMO CODES
-  // ─────────────────────────────────────────────────────────────────────────────
-
   private computePromoStatus(
     isActive: boolean,
     used: number,
@@ -388,8 +416,7 @@ export class PromotionService {
     const conditions: SQL[] = [];
     if (discountType)
       conditions.push(eq(promo_code.discountType, discountType));
-    if (search)
-      conditions.push(ilike(promo_code.code, `%${search}%`));
+    if (search) conditions.push(ilike(promo_code.code, `%${search}%`));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -402,12 +429,7 @@ export class PromotionService {
 
     let data = rows.map((r) => ({
       ...r,
-      status: this.computePromoStatus(
-        r.isActive,
-        r.used,
-        r.limit,
-        r.endDate,
-      ),
+      status: this.computePromoStatus(r.isActive, r.used, r.limit, r.endDate),
     }));
 
     // Post-filter by computed status if requested
@@ -461,7 +483,8 @@ export class PromotionService {
     const setData: Record<string, any> = { updatedAt: new Date() };
     if (dto.code) setData.code = dto.code.toUpperCase();
     if (dto.discountType !== undefined) setData.discountType = dto.discountType;
-    if (dto.discountValue !== undefined) setData.discountValue = dto.discountValue;
+    if (dto.discountValue !== undefined)
+      setData.discountValue = dto.discountValue;
     if (dto.description !== undefined) setData.description = dto.description;
     if (dto.limit !== undefined) setData.limit = dto.limit;
     if (dto.isActive !== undefined) setData.isActive = dto.isActive;
@@ -480,4 +503,45 @@ export class PromotionService {
     await this.db.delete(promo_code).where(eq(promo_code.id, id));
     return { message: 'Deleted' };
   }
+    async getProductVariantWithDiscountPrice(id: string) {
+    const now = new Date();
+    return await this.db
+      .select({
+        variantId: product_variants.id,
+        sku: product_variants.sku,
+        name: product_variants.name,
+        variantStock: product_variants.stock,
+        basePrice: product_variants.price,
+        discountPercentage: discount_event_products.discountPercentage,
+        promoStockLeft: discount_event_products.stock,
+        finalPrice: sql<number>`
+        CASE 
+          WHEN ${discount_events.id} IS NOT NULL AND ${discount_event_products.stock} > 0 
+          THEN FLOOR(
+            ${product_variants.price} - (${product_variants.price} * ${discount_event_products.discountPercentage} / 100.0)
+          )
+          ELSE ${product_variants.price}
+        END
+      `.mapWith(Number),
+      })
+      .from(product_variants)
+      .leftJoin(
+        discount_event_products,
+        eq(product_variants.productId, discount_event_products.productId),
+      )
+      .leftJoin(
+        discount_events,
+        and(
+          eq(discount_event_products.eventId, discount_events.id),
+          lte(discount_events.startDate, now),
+          eq(discount_events.isActive, true),
+          or(
+            isNull(discount_events.endDate),
+            gte(discount_events.endDate, now),
+          ),
+        ),
+      )
+      .where(eq(product_variants.productId, id))
+  } 
+  
 }
