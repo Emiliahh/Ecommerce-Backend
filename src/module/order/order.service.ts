@@ -35,7 +35,7 @@ export class OrderService {
     @Inject(DRIZZLE) private readonly db: DB,
     @Inject(forwardRef(() => PaymentService))
     private readonly paymentService: PaymentService,
-  ) {}
+  ) { }
   async checkMethodExist(code: string) {
     if (!acceptedPaymentMethod.includes(code)) {
       throw new BadRequestException('Payment method not found');

@@ -9,10 +9,12 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -54,6 +56,15 @@ export class ProductController {
   async getAllProduct(@Body() query: ProductQueryDto) {
     return this.productService.getAllProduct(query);
   }
+  @Get("search")
+  @Public()
+  @ApiOkResponse({ type: [String] })
+  async searchProduct(@Query() query: ProductQueryDto) {
+    const { q } = query;
+    if (!q) return [];
+    return this.productService.keyWordSearch(q);
+  }
+
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get product by ID or slug' })
@@ -84,4 +95,5 @@ export class ProductController {
   async deleteProduct(@Param('id', ParseUUIDPipe) id: string) {
     return this.productService.deleteProduct(id);
   }
+
 }

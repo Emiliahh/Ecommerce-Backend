@@ -878,7 +878,24 @@ export class ProductService {
       await tx.delete(products).where(eq(products.id, id));
     });
   }
+  async keyWordSearch(keyword: string) {
+    const searchPattern = `%${keyword}%`;
 
+    const res = await this.db
+      .select()
+      .from(products)
+      .where(
+        sql`${products.seoMetadata}->>'keywords' ILIKE ${searchPattern}`
+      );
+    const reskw = new Set()
+    res.forEach((e) => {
+      e.seoMetadata?.keywords?.forEach((e) => {
+        reskw.add(e)
+      })
+    })
+    return Array.from(reskw)
+
+  }
   private generateSlug(name: string): string {
     return name
       .toLowerCase()
