@@ -16,8 +16,10 @@ import {
   payments,
   product_variants,
   variant_images,
+  discount_events,
+  discount_event_products,
 } from 'src/database/schema';
-import { eq, inArray, and, sql, SQL } from 'drizzle-orm';
+import { eq, inArray, and, sql, SQL, lte, gte, or, isNull } from 'drizzle-orm';
 import { GetOrderQueryDto } from './dto/get-order.dto';
 import { CreateOrderLogDto } from './dto/create-order-log.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
@@ -61,9 +63,87 @@ export class OrderService {
       const data = await tx.query.product_variants.findMany({
         where: inArray(product_variants.id, variantIds),
       });
+
+      const now = new Date();
       data.forEach((variant) => {
-        priceMap.set(variant.id, variant.price);
+        let finalPrice = variant.price;
+        // Check if cached salePrice is active based on validity dates
+        if (
+          variant.salePrice !== null &&
+          variant.validFrom &&
+          variant.validFrom <= now &&
+          (!variant.validTo || variant.validTo >= now)
+        ) {
+          finalPrice = variant.salePrice;
+        }
+        priceMap.set(variant.id, finalPrice);
       });
+
+      // Self-healing fallback: find any products whose variants are missing active sale info but might be on sale
+      const staleProductIds = Array.from(
+        new Set(
+          data
+            .filter((v) => {
+              const isSalePriceMissing = v.salePrice === null;
+              const isSalePriceExpired = v.validTo && v.validTo < now;
+              const isSalePriceNotStarted = v.validFrom && v.validFrom > now;
+              return (
+                isSalePriceMissing ||
+                isSalePriceExpired ||
+                isSalePriceNotStarted
+              );
+            })
+            .map((v) => v.productId),
+        ),
+      );
+
+      if (staleProductIds.length > 0) {
+        const foundPromotions = await tx
+          .select({
+            productId: discount_event_products.productId,
+            discountPercentage: discount_event_products.discountPercentage,
+            startDate: discount_events.startDate,
+            endDate: discount_events.endDate,
+            eventId: discount_events.id,
+          })
+          .from(discount_event_products)
+          .innerJoin(
+            discount_events,
+            and(
+              eq(discount_event_products.eventId, discount_events.id),
+              eq(discount_events.isActive, true),
+              lte(discount_events.startDate, now),
+              or(
+                isNull(discount_events.endDate),
+                gte(discount_events.endDate, now),
+              ),
+            ),
+          )
+          .where(inArray(discount_event_products.productId, staleProductIds));
+
+        for (const promo of foundPromotions) {
+          const variantsOfProduct = data.filter(
+            (v) => v.productId === promo.productId,
+          );
+          for (const v of variantsOfProduct) {
+            const finalPrice = Math.floor(
+              v.price - (v.price * promo.discountPercentage) / 100.0,
+            );
+            priceMap.set(v.id, finalPrice);
+
+            await tx
+              .update(product_variants)
+              .set({
+                salePrice: finalPrice,
+                discountPercentage: promo.discountPercentage,
+                discountEventId: promo.eventId,
+                validFrom: promo.startDate,
+                validTo: promo.endDate,
+              })
+              .where(eq(product_variants.id, v.id));
+          }
+        }
+      }
 
       const total = items.reduce((sum, item) => {
         const price = priceMap.get(item.variantId) || 0;
@@ -106,7 +186,7 @@ export class OrderService {
         return {
           name: variant?.name || '',
           quantity: item.quantity || 0,
-          price: variant?.price || 0,
+          price: priceMap.get(item.variantId) || 0,
         };
       });
       let transactionId = orderCode;
@@ -122,12 +202,25 @@ export class OrderService {
         paylink = res.checkoutUrl;
         transactionId = intcode.toString();
       }
-      await tx.insert(payments).values({
-        orderId: order[0].id,
-        paymentMethodId: paymentMethod.id,
-        amount: total,
+      const paymentResult = await tx
+        .insert(payments)
+        .values({
+          orderId: order[0].id,
+          paymentMethodId: paymentMethod.id,
+          amount: total,
+          status: 'pending',
+          transactionId: transactionId,
+        })
+        .returning();
+
+      await tx.insert(payment_transaction_logs).values({
         status: 'pending',
-        transactionId: transactionId,
+        action: 'create',
+        paymentId: paymentResult[0].id,
+        payload:
+          paymentMethod.code === 'payos'
+            ? { checkoutUrl: paylink, transactionId }
+            : null,
       });
 
       this.orderEvents$.next({
@@ -246,6 +339,7 @@ export class OrderService {
       offset,
       orderBy: (orders, { desc }) => [desc(orders.createdAt)],
       with: {
+        payments: true,
         items: {
           with: {
             variant: {
@@ -344,34 +438,68 @@ export class OrderService {
     data: WebhookData,
     status: string,
   ) {
-    const order = await this.db.query.customer_orders.findFirst({
-      where: eq(customer_orders.orderCode, orderCode),
+    return await this.db.transaction(async (tx) => {
+      const order = await tx.query.customer_orders.findFirst({
+        where: eq(customer_orders.orderCode, orderCode),
+      });
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      const payment = await tx.query.payments.findFirst({
+        where: eq(payments.orderId, order.id),
+      });
+
+      if (!payment) {
+        throw new NotFoundException('Payment not found');
+      }
+
+      // 1. Log the transaction event
+      await tx.insert(payment_transaction_logs).values({
+        status: status,
+        action: 'webhook_update',
+        paymentId: payment.id,
+        payload: data,
+      });
+
+      // 2. Update payment status and transaction ID
+      const [updatedPayment] = await tx
+        .update(payments)
+        .set({
+          status: status as any,
+        })
+        .where(eq(payments.id, payment.id))
+        .returning();
+
+      // 3. If successful, update the order status using standard updateOrder logic
+      if (status === 'success' && order.status === 'pending') {
+        const orderUpdated = await tx
+          .update(customer_orders)
+          .set({ status: 'processing' })
+          .where(eq(customer_orders.id, order.id))
+          .returning();
+
+        await this.addLog(
+          {
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: 'processing',
+            note: 'Thanh toán thành công qua PayOS',
+          },
+          tx,
+        );
+
+        this.orderEvents$.next({
+          data: {
+            event: 'order_updated',
+            order: orderUpdated[0],
+          },
+        });
+      }
+
+      return updatedPayment;
     });
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-    const payment = await this.db.query.payments.findFirst({
-      where: eq(payments.orderId, order.id),
-    });
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
-    await this.db.insert(payment_transaction_logs).values({
-      status: status,
-      action: status,
-      paymentId: payment.id,
-      payload: data,
-    });
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
-    const updatedPayment = await this.db
-      .update(payments)
-      .set({
-        transactionId: orderCode,
-      })
-      .where(eq(payments.id, payment.id))
-      .returning();
-    return updatedPayment[0];
   }
+
 }

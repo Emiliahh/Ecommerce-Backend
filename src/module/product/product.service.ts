@@ -51,7 +51,7 @@ export class ProductService {
     @Inject(DRIZZLE) private readonly db: DB,
     private readonly promotionService: PromotionService,
     private readonly cache: CacheRegistry,
-  ) {}
+  ) { }
 
   async create(dto: CreateProductDto) {
     // Check if category exists
@@ -101,16 +101,6 @@ export class ProductService {
           }
         }
       }
-      const [baseVariant] = await tx
-        .insert(product_variants)
-        .values({
-          productId: newProduct.id,
-          sku: dto.sku ?? '',
-          price: dto.price ?? 0,
-          stock: dto.stock,
-          name: dto.name,
-        })
-        .returning();
       if (dto.attribute?.length) {
         const attributeValuesToInsert = dto.attribute.map((attr) => {
           return {
@@ -124,8 +114,6 @@ export class ProductService {
           .insert(product_attribute_values)
           .values(attributeValuesToInsert);
       }
-
-      // Insert distinct images and map URLs to their generated IDs
       const urlToImageId = new Map<string, string>();
       if (productImagesToInsert.length > 0) {
         const insertedImages = await tx
@@ -134,6 +122,8 @@ export class ProductService {
           .returning();
         insertedImages.forEach((img) => urlToImageId.set(img.url, img.id));
       }
+
+      const insertedVariantImages = new Set<string>();
 
       if (dto.variants) {
         for (const variantDto of dto.variants) {
@@ -148,36 +138,41 @@ export class ProductService {
             })
             .returning();
 
-          // Link each specific variant to its own subset of images
+          if (variantDto.attributes && variantDto.attributes.length > 0) {
+            const variantAttributesToInsert = variantDto.attributes.map((attr) => ({
+              variantId: newVariant.id,
+              attributeId: attr.attributeId,
+              optionId: attr.optionId,
+              value: attr.value,
+            }));
+            await tx
+              .insert(variant_attribute_values)
+              .values(variantAttributesToInsert);
+          }
+
           if (variantDto.images && variantDto.images.length > 0) {
-            const variantImagesToInsert = variantDto.images.map(
-              (url, index) => {
+            const variantImagesToInsert = variantDto.images
+              .map((url, idx) => {
                 const imageId = urlToImageId.get(url);
-                if (!imageId)
-                  throw new InternalServerErrorException(
-                    `Image ID not found for URL: ${url}`,
-                  );
+                if (!imageId) return null;
+
+                const key = `${newVariant.id}:${imageId}`;
+                if (insertedVariantImages.has(key)) return null;
+
+                insertedVariantImages.add(key);
                 return {
                   variantId: newVariant.id,
                   imageId: imageId,
-                  isMain: index === 0,
+                  isMain: idx === 0,
                 };
-              },
-            );
+              })
+              .filter((v): v is NonNullable<typeof v> => v !== null);
 
-            await tx.insert(variant_images).values(variantImagesToInsert);
+            if (variantImagesToInsert.length > 0) {
+              await tx.insert(variant_images).values(variantImagesToInsert);
+            }
           }
         }
-      }
-      if (urlToImageId.size > 0) {
-        const baseVariantImages = Array.from(urlToImageId.values()).map(
-          (imageId, index) => ({
-            variantId: baseVariant.id,
-            imageId,
-            isMain: index === 0,
-          }),
-        );
-        await tx.insert(variant_images).values(baseVariantImages);
       }
       return {
         id: newProduct.id,
@@ -186,7 +181,7 @@ export class ProductService {
       };
     });
   }
-  // plain get product detail without mapping
+
   async getProductDetail(product_id: string) {
     const product = await this.db.query.products.findFirst({
       where:
@@ -201,6 +196,7 @@ export class ProductService {
         },
         variants: {
           with: {
+            // disable these new colunn
             variantImages: {
               with: {
                 image: {
@@ -422,7 +418,7 @@ export class ProductService {
           ? this.cache.getCategoryById(current.parentId)
           : undefined;
       }
-
+      //@ts-ignore
       return {
         ...restProduct,
         categoryPath,
@@ -741,14 +737,12 @@ export class ProductService {
       // parallel call for faster speed
       await Promise.all([updateProduct, updateAttributes, updateImages]);
 
-      // ─variant
       if (product.variants && updateProductDTO.variants) {
         const originalMap = new Map(product.variants.map((v) => [v.id, v]));
         const incomingIds = new Set(
           updateProductDTO.variants.map((v) => v.id).filter(Boolean),
         );
 
-        // Delete removed variants in one call
         const toDelete = Array.from(originalMap.keys()).filter(
           (id) => !incomingIds.has(id),
         );
@@ -756,11 +750,10 @@ export class ProductService {
         const deleteVariants =
           toDelete.length > 0
             ? tx
-                .delete(product_variants)
-                .where(inArray(product_variants.id, toDelete))
+              .delete(product_variants)
+              .where(inArray(product_variants.id, toDelete))
             : Promise.resolve();
 
-        // Process all variants in parallel
         const processVariants = Promise.all(
           updateProductDTO.variants.map(async (newData) => {
             let variantId: string;
@@ -781,16 +774,11 @@ export class ProductService {
               ];
               if (newData.attributes !== undefined) {
                 const variantAttrSync = async () => {
-                  const incomingAttrIds = newData.attributes!.map(
-                    (a) => a.attributeId,
-                  );
-
-                  // 1. Delete all existing attributes for this variant
+                  // brute force update: delete all existing and insert new
                   await tx
                     .delete(variant_attribute_values)
                     .where(eq(variant_attribute_values.variantId, variantId));
 
-                  // 2. Insert new ones (if any)
                   if (newData.attributes!.length > 0) {
                     await tx.insert(variant_attribute_values).values(
                       newData.attributes!.map((attr) => ({
@@ -805,8 +793,6 @@ export class ProductService {
 
                 ops.push(variantAttrSync());
               }
-
-              // Delete old variant images + bulk insert new ones
               if (newData.images !== undefined) {
                 ops.push(
                   (async () => {
@@ -832,7 +818,6 @@ export class ProductService {
 
               await Promise.all(ops);
             } else {
-              // Insert new variant
               const [inserted] = await tx
                 .insert(product_variants)
                 .values({
@@ -846,30 +831,29 @@ export class ProductService {
 
               variantId = inserted.id;
 
-              // Bulk insert attributes + images in parallel
               await Promise.all([
                 newData.attributes?.length
                   ? tx.insert(variant_attribute_values).values(
-                      newData.attributes.map((attr) => ({
-                        variantId,
-                        attributeId: attr.attributeId,
-                        optionId: attr.optionId,
-                        value: attr.value,
-                      })),
-                    )
+                    newData.attributes.map((attr) => ({
+                      variantId,
+                      attributeId: attr.attributeId,
+                      optionId: attr.optionId,
+                      value: attr.value,
+                    })),
+                  )
                   : Promise.resolve(),
 
                 newData.images?.length
                   ? tx.insert(variant_images).values(
-                      newData.images.map((url, index) => {
-                        const imageId = urlToImageId.get(url);
-                        if (!imageId)
-                          throw new InternalServerErrorException(
-                            `Image ID not found for URL: ${url}`,
-                          );
-                        return { variantId, imageId, isMain: index === 0 };
-                      }),
-                    )
+                    newData.images.map((url, index) => {
+                      const imageId = urlToImageId.get(url);
+                      if (!imageId)
+                        throw new InternalServerErrorException(
+                          `Image ID not found for URL: ${url}`,
+                        );
+                      return { variantId, imageId, isMain: index === 0 };
+                    }),
+                  )
                   : Promise.resolve(),
               ]);
             }

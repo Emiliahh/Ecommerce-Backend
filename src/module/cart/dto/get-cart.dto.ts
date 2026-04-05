@@ -9,6 +9,7 @@ import {
   discount_events,
   discount_event_products,
 } from 'src/database/schema';
+import { selectVariantSchema } from 'src/module/product/dto/get-product.dto';
 /** Converts Date objects to ISO strings for JSON Schema compatibility */
 const dateStr = z.preprocess(
   (v) => (v instanceof Date ? v.toISOString() : v),
@@ -16,7 +17,8 @@ const dateStr = z.preprocess(
 );
 
 const selectCartSchema = createSelectSchema(customer_carts);
-const selectVariantSchema = createSelectSchema(product_variants);
+// omit date
+
 const selectProductSchema = createSelectSchema(products).omit({
   description: true,
   createdAt: true,
@@ -24,11 +26,10 @@ const selectProductSchema = createSelectSchema(products).omit({
   seoMetadata: true,
 });
 const selectImageSchema = createSelectSchema(product_images);
-const discountEventSchema = createSelectSchema(discount_event_products)
-  .omit({
-    createdAt: true,
-    updatedAt: true,
-  })
+const discountEventSchema = createSelectSchema(discount_event_products).omit({
+  createdAt: true,
+  updatedAt: true,
+});
 
 export const GetCartResponseSchema = selectCartSchema
   .extend({
@@ -47,4 +48,4 @@ export const GetCartResponseSchema = selectCartSchema
   })
   .omit({ createdAt: true, updatedAt: true });
 
-export class GetCartResponseDto extends createZodDto(GetCartResponseSchema) { }
+export class GetCartResponseDto extends createZodDto(GetCartResponseSchema) {}

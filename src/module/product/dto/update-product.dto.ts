@@ -39,6 +39,8 @@ export const updateProductVariantSchema = createUpdateSchema(product_variants, {
 })
   .omit({
     productId: true,
+    validFrom: true,
+    validTo: true,
   })
   .extend({
     images: z.array(z.url()).optional(),

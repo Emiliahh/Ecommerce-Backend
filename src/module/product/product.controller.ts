@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -30,11 +31,10 @@ import { Roles } from 'src/decorator/role';
 @ApiTags('Product')
 @Controller('product')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(private readonly productService: ProductService) { }
 
   @Post()
   @Roles('admin', 'superadmin')
-  @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiBearerAuth()
@@ -64,7 +64,6 @@ export class ProductController {
 
   @Patch(':id')
   @Roles('admin', 'superadmin')
-  @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
@@ -74,5 +73,15 @@ export class ProductController {
     @Body() data: UpdateProductDto,
   ) {
     return this.productService.updateProductTransaction(id, data);
+  }
+
+  @Delete(':id')
+  @Roles('admin', 'superadmin')
+  @UseGuards(RoleGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete product by ID' })
+  async deleteProduct(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productService.deleteProduct(id);
   }
 }

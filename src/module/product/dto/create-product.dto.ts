@@ -4,8 +4,8 @@ import {
   products,
   product_variants,
   product_attribute_values,
-  variant_attribute_values,
   product_images,
+  variant_attribute_values,
 } from 'src/database/schema';
 import { z } from 'zod';
 export const seoMetaData = z.object({
@@ -33,9 +33,14 @@ const createVariantSchema = createInsertSchema(product_variants, {
   stock: z.number().min(0, 'Stock must be non-negative'),
   name: z.string().optional(),
 })
-  .omit({ productId: true, id: true })
+  .omit({ productId: true, id: true, validFrom: true, validTo: true })
   .extend({
-    images: z.array(z.url()).optional(),
+    images: z
+      .preprocess(
+        (val) => (Array.isArray(val) ? val.filter((v) => !!v) : val),
+        z.array(z.string().url()),
+      )
+      .optional(),
     attributes: z.array(createVariantAttributeValueSchema).optional(),
   });
 // validator for create atrribute .*eg memory = "256GB"
@@ -75,12 +80,9 @@ const createSchema = createInsertSchema(products, {
     slug: true,
   })
   .extend({
-    variants: z.array(createVariantSchema).optional(),
+    variants: z.array(createVariantSchema).min(1, 'At least one variant is required'),
     images: z.array(createImageSchema).optional(),
     attribute: z.array(createProductAttributeSchema).optional(),
-    price: z.number().min(0, 'Price must be non-negative').optional(),
-    stock: z.number().min(0, 'Stock must be non-negative').optional(),
-    sku: z.string().min(1, 'SKU is required').optional(),
   });
 
-export class CreateProductDto extends createZodDto(createSchema) {}
+export class CreateProductDto extends createZodDto(createSchema) { }

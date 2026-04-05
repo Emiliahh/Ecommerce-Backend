@@ -10,7 +10,14 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiBody } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiBody,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { Observable, filter } from 'rxjs';
 import PaginateDTO from 'src/common/dto/paginate.dto';
 import {
@@ -30,7 +37,7 @@ import { CurrentUser } from 'src/decorator/user';
 @ApiTags('Order')
 @Controller('order')
 export class OrderController {
-  constructor(private readonly orderService: OrderService) { }
+  constructor(private readonly orderService: OrderService) {}
 
   @Sse('sse')
   @Roles('customer', 'admin', 'superadmin')
@@ -45,7 +52,7 @@ export class OrderController {
         // Check if the event data belongs to the user
         // Assuming your event.data contains the updated order object
         return event.data?.order?.userId === user.userId;
-      })
+      }),
     );
   }
 
@@ -54,8 +61,12 @@ export class OrderController {
   @UseGuards(RoleGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all order' })
-  @ApiResponse({ type: PaginatedGetOrderResponseDto })
-  async getAllOrder(@CurrentUser('userId') userId: string, @CurrentUser('role') role: string, @Query() query: GetOrderQueryDto) {
+  @ApiOkResponse({ type: PaginatedGetOrderResponseDto })
+  async getAllOrder(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('role') role: string,
+    @Query() query: GetOrderQueryDto,
+  ) {
     const isAdmin = role === 'admin' || role === 'superadmin';
     return this.orderService.getAllOrder(isAdmin ? undefined : userId, query);
   }
@@ -65,7 +76,7 @@ export class OrderController {
   @UseGuards(RoleGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get order by id' })
-  @ApiResponse({ type: GetOrderResponseDto })
+  @ApiOkResponse({ type: GetOrderResponseDto })
   async getOrderById(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as JwtPayload & { role: string };
     const isAdmin = user.role === 'admin' || user.role === 'superadmin';
@@ -77,8 +88,11 @@ export class OrderController {
   @Post('')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new order' })
-  async createOrder(@CurrentUser('userId') userId: string, @Body() dto: CreateOrderDto) {
-    console.log(userId)
+  async createOrder(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: CreateOrderDto,
+  ) {
+    console.log(userId);
     return this.orderService.createOrder(userId, dto);
   }
 
@@ -87,6 +101,7 @@ export class OrderController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update an order (Admin Only)' })
   @ApiBody({ type: UpdateOrderDto })
+  @ApiOkResponse({ type: GetOrderResponseDto })
   async updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
     return this.orderService.updateOrder(id, dto);
   }
@@ -94,8 +109,14 @@ export class OrderController {
   @Patch(':id/cancel')
   @Roles('customer')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cancel an order (Customer Only)' })
-  async cancelOrder(@Param('id') id: string, @CurrentUser('userId') userId: string) {
-    return this.orderService.updateOrder(id, { status: 'cancelled', note: 'Customer cancelled' });
+  @ApiOkResponse({ type: GetOrderResponseDto })
+  async cancelOrder(
+    @Param('id') id: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.orderService.updateOrder(id, {
+      status: 'cancelled',
+      note: 'Customer cancelled',
+    });
   }
 }

@@ -22,7 +22,13 @@ export const selectProductSchema = createSelectSchema(products).omit({
   createdAt: true,
   updatedAt: true,
 });
-export const selectVariantSchema = createSelectSchema(product_variants);
+export const selectVariantSchema = createSelectSchema(product_variants).omit({
+  validFrom: true,
+  validTo: true,
+}).extend({
+  validFrom: dateStr,
+  validTo: dateStr,
+});
 const selectImageSchema = createSelectSchema(product_images);
 
 const selectCategorySchema = createSelectSchema(categories).omit({
@@ -115,7 +121,7 @@ const GetProductResponseSchema = selectProductSchema.extend({
 
 export default class GetProductResponseDto extends createZodDto(
   GetProductResponseSchema,
-) {}
+) { }
 
 const PaginatedGetProductResponseSchema: z.ZodType<
   IPaginatedRes<GetProductResponseDto>
@@ -126,7 +132,7 @@ const PaginatedGetProductResponseSchema: z.ZodType<
 
 export class PaginatedGetProductResponseDto extends createZodDto(
   PaginatedGetProductResponseSchema,
-) {}
+) { }
 
 const GetProductListResponseSchema = selectProductSchema
   .omit({ description: true })
@@ -143,7 +149,7 @@ const GetProductListResponseSchema = selectProductSchema
 
 export class GetProductListResponseDto extends createZodDto(
   GetProductListResponseSchema,
-) {}
+) { }
 
 const PaginatedGetProductListResponseSchema = z.object({
   count: z.number(),
@@ -152,7 +158,7 @@ const PaginatedGetProductListResponseSchema = z.object({
 
 export class PaginatedGetProductListResponseDto extends createZodDto(
   PaginatedGetProductListResponseSchema,
-) {}
+) { }
 
 const productQuerySchema = z.object({
   category: z.string().optional(),
@@ -165,4 +171,4 @@ const productQuerySchema = z.object({
     .optional(),
 });
 
-export class ProductQueryDto extends createZodDto(productQuerySchema) {}
+export class ProductQueryDto extends createZodDto(productQuerySchema) { }

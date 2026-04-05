@@ -352,10 +352,26 @@ export class PromotionService {
     });
     if (existing) throw new ConflictException('Product already in this event');
 
-    const [row] = await this.db
-      .insert(discount_event_products)
-      .values({ eventId, ...dto })
-      .returning();
+    // precalculate and cache discount info in product_variants for all variants of this product
+    // Use a transaction to ensure both updates happen together
+    const row = await this.db.transaction(async (tx) => {
+      await tx
+        .update(product_variants)
+        .set({
+          salePrice: sql`floor(${product_variants.price} - (${product_variants.price} * ${dto.discountPercentage} / 100.0))`,
+          discountPercentage: dto.discountPercentage,
+          discountEventId: eventId,
+          validFrom: event.startDate,
+          validTo: event.endDate,
+        })
+        .where(eq(product_variants.productId, dto.productId));
+
+      const [row] = await tx
+        .insert(discount_event_products)
+        .values({ eventId, ...dto })
+        .returning();
+      return row;
+    });
     return row;
   }
 
@@ -372,17 +388,36 @@ export class PromotionService {
     });
     if (!existing) throw new NotFoundException('Event product not found');
 
-    const [updated] = await this.db
-      .update(discount_event_products)
-      .set({ ...dto, updatedAt: new Date() })
-      .where(
-        and(
-          eq(discount_event_products.eventId, eventId),
-          eq(discount_event_products.productId, productId),
-        ),
-      )
-      .returning();
-    return updated;
+    return await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(discount_event_products)
+        .set({ ...dto, updatedAt: new Date() })
+        .where(
+          and(
+            eq(discount_event_products.eventId, eventId),
+            eq(discount_event_products.productId, productId),
+          ),
+        )
+        .returning();
+        
+      if (dto.discountPercentage !== undefined) {
+        const event = await tx.query.discount_events.findFirst({
+          where: eq(discount_events.id, eventId),
+        });
+        if (event) {
+          await tx
+            .update(product_variants)
+            .set({
+              salePrice: sql`floor(${product_variants.price} - (${product_variants.price} * ${dto.discountPercentage} / 100.0))`,
+              discountPercentage: dto.discountPercentage,
+              validFrom: event.startDate,
+              validTo: event.endDate,
+            })
+            .where(eq(product_variants.productId, productId));
+        }
+      }
+      return updated;
+    });
   }
 
   async removeProductFromEvent(eventId: string, productId: string) {
@@ -394,15 +429,30 @@ export class PromotionService {
     });
     if (!existing) throw new NotFoundException('Event product not found');
 
-    await this.db
-      .delete(discount_event_products)
-      .where(
-        and(
-          eq(discount_event_products.eventId, eventId),
-          eq(discount_event_products.productId, productId),
-        ),
-      );
-    return { message: 'Removed' };
+    return await this.db.transaction(async (tx) => {
+      await tx
+        .delete(discount_event_products)
+        .where(
+          and(
+            eq(discount_event_products.eventId, eventId),
+            eq(discount_event_products.productId, productId),
+          ),
+        );
+
+      // Cache Invalidation: clear variant cache for this product
+      await tx
+        .update(product_variants)
+        .set({
+          salePrice: null,
+          discountPercentage: null,
+          discountEventId: null,
+          validFrom: null,
+          validTo: null,
+        })
+        .where(eq(product_variants.productId, productId));
+
+      return { message: 'Removed' };
+    });
   }
   private computePromoStatus(
     isActive: boolean,

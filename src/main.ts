@@ -21,8 +21,13 @@ async function bootstrap() {
         process.env.CLIENT_URL ?? 'http://localhost:3001',
         process.env.ADMIN_URL ?? 'http://localhost:3000',
       ];
-      // Allow requests with no origin (Next.js SSR / server-to-server / mobile apps)
-      if (!origin || allowedOrigins.includes(origin)) {
+      const isNgrok =
+        origin &&
+        (origin.endsWith('.ngrok-free.app') ||
+          origin.endsWith('.ngrok.io') ||
+          origin.endsWith('.ngrok.dev'));
+
+      if (!origin || allowedOrigins.includes(origin) || isNgrok) {
         callback(null, true);
       } else {
         callback(new Error(`CORS: Origin ${origin} not allowed`));
@@ -30,7 +35,11 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'ngrok-skip-browser-warning',
+    ],
   });
 
   const openApiDoc = SwaggerModule.createDocument(
