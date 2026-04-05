@@ -168,6 +168,28 @@ export class OrderService {
           price: priceMap.get(item.variantId) || 0,
         })),
       );
+
+      // DECREASE STOCK
+      for (const item of items) {
+        await tx
+          .update(product_variants)
+          .set({ stock: sql`${product_variants.stock} - ${item.quantity}` })
+          .where(eq(product_variants.id, item.variantId));
+
+        // ALSO DECREASE SALE EVENT STOCK
+        const variant = data.find((v) => v.id === item.variantId);
+        if (variant?.discountEventId) {
+          await tx
+            .update(discount_event_products)
+            .set({ stock: sql`${discount_event_products.stock} - ${item.quantity}` })
+            .where(
+              and(
+                eq(discount_event_products.eventId, variant.discountEventId),
+                eq(discount_event_products.productId, variant.productId)
+              )
+            );
+        }
+      }
       await this.addLog(
         {
           orderId: order[0].id,
@@ -245,6 +267,9 @@ export class OrderService {
     return await this.db.transaction(async (tx) => {
       const order = await tx.query.customer_orders.findFirst({
         where: eq(customer_orders.id, orderId),
+        with: {
+          items: true,
+        },
       });
 
       if (!order) {
@@ -305,6 +330,15 @@ export class OrderService {
           order: updatedOrder[0],
         },
       });
+
+      if (data.status === 'cancelled') {
+        for (const item of order.items) {
+          await tx
+            .update(product_variants)
+            .set({ stock: sql`${product_variants.stock} + ${item.quantity}` })
+            .where(eq(product_variants.id, item.variantId));
+        }
+      }
 
       return updatedOrder[0];
     });
@@ -489,6 +523,41 @@ export class OrderService {
           },
           tx,
         );
+
+        this.orderEvents$.next({
+          data: {
+            event: 'order_updated',
+            order: orderUpdated[0],
+          },
+        });
+      } else if (status === 'cancelled' && order.status !== 'cancelled') {
+        const orderUpdated = await tx
+          .update(customer_orders)
+          .set({ status: 'cancelled' })
+          .where(eq(customer_orders.id, order.id))
+          .returning();
+
+        await this.addLog(
+          {
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: 'cancelled',
+            note: 'Thanh toán bị huỷ qua PayOS',
+          },
+          tx,
+        );
+
+        // Fetch items to restore stock
+        const itemsToRestore = await tx.query.customer_orders_items.findMany({
+          where: eq(customer_orders_items.orderId, order.id),
+        });
+
+        for (const item of itemsToRestore) {
+          await tx
+            .update(product_variants)
+            .set({ stock: sql`${product_variants.stock} + ${item.quantity}` })
+            .where(eq(product_variants.id, item.variantId));
+        }
 
         this.orderEvents$.next({
           data: {
