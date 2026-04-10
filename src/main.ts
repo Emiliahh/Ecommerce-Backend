@@ -42,22 +42,24 @@ async function bootstrap() {
     ],
   });
 
-  const openApiDoc = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle('Example API')
-      .setDescription('Example API description')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build(),
-  );
+  if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
+    const openApiDoc = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('Example API')
+        .setDescription('Example API description')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build(),
+    );
 
-  SwaggerModule.setup('api', app, cleanupOpenApiDoc(openApiDoc), {
-    jsonDocumentUrl: '/api-json',
-    swaggerOptions: {
-      displayRequestDuration: true,
-    },
-  });
+    SwaggerModule.setup('api', app, cleanupOpenApiDoc(openApiDoc), {
+      jsonDocumentUrl: '/api-json',
+      swaggerOptions: {
+        displayRequestDuration: true,
+      },
+    });
+  }
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

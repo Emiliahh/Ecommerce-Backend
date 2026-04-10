@@ -44,7 +44,7 @@ export const users = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     email: text('email').unique().notNull(),
-    phone: varchar('phone', { length: 15 }).unique().notNull(),
+    phone: varchar('phone', { length: 15 }).unique(),
     name: text('name'),
     emailVerified: timestamp('email_verified', { mode: 'date' }),
     image: text('image'),

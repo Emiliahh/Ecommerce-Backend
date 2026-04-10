@@ -171,6 +171,29 @@ export class AuthService {
 
     return { access_token, refresh_token };
   }
+  async googleLogin(user: any) {
+    const existingUser = await this.db.query.users.findFirst({
+      where: eq(users.email, user.email)
+    })
+    if (!existingUser) {
+      const [newUser] = await this.db.insert(users).values({
+        email: user.email,
+        name: user.firstName + ' ' + user.lastName,
+        image: user.picture,
+        provider: user.provider,
+        providerId: user.providerId,
+        role: 'customer',
+      }).returning();
+      return this.generateTokens(newUser);
+    }
+    const [syncAccount] = await this.db.update(users).set({
+      name: user.firstName + ' ' + user.lastName,
+      image: user.picture,
+      provider: user.provider,
+      providerId: user.providerId,
+    }).where(eq(users.email, user.email)).returning();
+    return this.generateTokens(syncAccount);
+  }
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');

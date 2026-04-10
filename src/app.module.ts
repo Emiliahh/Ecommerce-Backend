@@ -33,6 +33,9 @@ import { AuthModule } from './module/auth/auth.module';
 import { UploadModule } from './module/upload/upload.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { CloudinaryModule } from './module/cloudinary/cloudinary.module';
+import { ChatbotController } from './module/chatbot/chatbot.controller';
+import { ChatbotService } from './module/chatbot/chatbot.service';
+import { ChatbotModule } from './module/chatbot/chatbot.module';
 
 @Catch(HttpException)
 class HttpExceptionFilter extends BaseExceptionFilter {
@@ -69,6 +72,7 @@ class HttpExceptionFilter extends BaseExceptionFilter {
     AuthModule,
     UploadModule,
     CloudinaryModule,
+    ChatbotModule,
   ],
   controllers: [AppController],
   providers: [
