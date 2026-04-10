@@ -22,6 +22,7 @@ import { EnvConfig } from 'src/env.validation';
 import type { Request, Response } from 'express';
 import { Roles } from 'src/decorator/role';
 import { RoleGuard } from 'src/guard/role.guard';
+import { GoogleAuthGuard } from './oath-guard';
 
 const REFRESH_TOKEN_COOKIE = 'refresh_token';
 
@@ -30,7 +31,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService<EnvConfig, true>,
-  ) {}
+  ) { }
 
   @HttpCode(200)
   @Public()
@@ -129,6 +130,20 @@ export class AuthController {
       path: '/api/auth',
       maxAge,
     });
+  }
+  @Public()
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  async googleAuth(@Req() req: Request) { }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
+    const { access_token, refresh_token } = await this.authService.googleLogin(req.user);
+    this.setRefreshTokenCookie(res, refresh_token);
+    res.redirect(`${this.configService.get('FRONTEND_URL')}/auth/callback`);
+
   }
 
   private parseExpiryToMs(expiresIn: string): number {

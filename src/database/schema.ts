@@ -44,7 +44,7 @@ export const users = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     email: text('email').unique().notNull(),
-    phone: varchar('phone', { length: 15 }).unique().notNull(),
+    phone: varchar('phone', { length: 15 }).unique(),
     name: text('name'),
     emailVerified: timestamp('email_verified', { mode: 'date' }),
     image: text('image'),
@@ -287,7 +287,14 @@ export const product_variants = pgTable(
       .notNull(),
     sku: varchar('sku', { length: 255 }).notNull(),
     price: bigint('price', { mode: 'number' }).notNull(),
+    // pre calculate price
+    salePrice: bigint('sale_price', { mode: 'number' }),
+    validTo: timestamp('valid_to'),
+    validFrom: timestamp('valid_from'),
     stock: integer('stock').notNull().default(0),
+    // Discount info cached from events for performance
+    discountPercentage: integer('discount_percentage'),
+    discountEventId: uuid('discount_event_id').references(() => discount_events.id),
     // name like for egs: iphone 17 pro max 256G CAM VŨ TRỤ
     name: text('name'),
   },

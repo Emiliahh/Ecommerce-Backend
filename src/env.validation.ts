@@ -16,6 +16,17 @@ export const envSchema = z.object({
   PAYOS_CLIENT_ID: z.string().default(''),
   PAYOS_API_KEY: z.string().default(''),
   PAYOS_CHECKSUM_KEY: z.string().default(''),
+  PINECONE_API_KEY: z.string().default(''),
+  PINECONE_API_INDEX: z.string().default(''),
+  GOOGLE_AI_API_KEY: z.string().default(''),
+
+  // GOOGLE OAUTH
+  GOOGLE_CLIENT_ID: z.string().default('123'),
+  GOOGLE_CLIENT_SECRET: z.string().default(''),
+  GOOGLE_CALLBACK_URL: z.string().default('http://localhost:3000/api/auth/google/callback'),
+
+  // FRONTEND
+  FRONTEND_URL: z.string().default('http://localhost:3001'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

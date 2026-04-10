@@ -51,17 +51,30 @@ export class CartService {
       },
     });
     // filter js side
-    const filteredCart = cart.filter((item) => {
-
-      return item.variant.product.discountEvents.some((event) => {
+    //@ts-ignore
+    return cart.map((e) => {
+      const discountEvent = e.variant.product.discountEvents.find((event) => {
+        const eventStartDate = new Date(event.event.startDate);
+        //9999-12-31
+        const eventEndDate = new Date(event.event?.endDate || '9999-12-31');
         return (
           event.event.isActive &&
-          event.event.startDate <= now &&
-          (event.event.endDate === null || event.event.endDate >= now)
+          now >= eventStartDate &&
+          now <= eventEndDate &&
+          event.stock > 0
         );
       });
+      return {
+        ...e,
+        variant: {
+          ...e.variant,
+          product: {
+            ...e.variant.product,
+            discountEvent: discountEvent,
+          },
+        },
+      };
     });
-    return filteredCart;
   }
   async updateCart(userId: string, dto: AddCartDto) {
     const cart = await this.db.query.customer_carts.findFirst({
@@ -85,7 +98,7 @@ export class CartService {
       await this.db.insert(customer_carts).values({
         userId,
         variantId: dto.variantId,
-        quantity: dto.quantity, // Lần đầu tạo thì luôn là số từ dto
+        quantity: dto.quantity,
       });
     }
 

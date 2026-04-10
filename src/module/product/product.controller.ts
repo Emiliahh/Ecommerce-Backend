@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -8,10 +9,12 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -30,11 +33,10 @@ import { Roles } from 'src/decorator/role';
 @ApiTags('Product')
 @Controller('product')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(private readonly productService: ProductService) { }
 
   @Post()
   @Roles('admin', 'superadmin')
-  @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiBearerAuth()
@@ -54,6 +56,15 @@ export class ProductController {
   async getAllProduct(@Body() query: ProductQueryDto) {
     return this.productService.getAllProduct(query);
   }
+  @Get("search")
+  @Public()
+  @ApiOkResponse({ type: [String] })
+  async searchProduct(@Query() query: ProductQueryDto) {
+    const { q } = query;
+    if (!q) return [];
+    return this.productService.keyWordSearch(q);
+  }
+
   @Get(':id')
   @Public()
   @ApiOperation({ summary: 'Get product by ID or slug' })
@@ -64,7 +75,6 @@ export class ProductController {
 
   @Patch(':id')
   @Roles('admin', 'superadmin')
-  @Public()
   @UseGuards(RoleGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
@@ -75,4 +85,15 @@ export class ProductController {
   ) {
     return this.productService.updateProductTransaction(id, data);
   }
+
+  @Delete(':id')
+  @Roles('admin', 'superadmin')
+  @UseGuards(RoleGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete product by ID' })
+  async deleteProduct(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productService.deleteProduct(id);
+  }
+
 }

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -44,17 +45,41 @@ import GetProductResponseDto, {
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CacheRegistry } from 'src/cache/cache.registry';
 import { PromotionService } from '../promotion/promotion.service';
+import { PINECONE_CLIENT, PINECONE_INSTANCE } from './provider/pinecone.provider';
+import { Pinecone } from '@pinecone-database/pinecone';
+import { type PineconeIndex } from './provider/picone.type';
 
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: DB,
+    @Inject(PINECONE_INSTANCE) private readonly pinecone: PineconeIndex,
+    @Inject(PINECONE_CLIENT) private readonly pineconeClient: Pinecone,
     private readonly promotionService: PromotionService,
     private readonly cache: CacheRegistry,
-  ) {}
+  ) { }
 
+  private buildProductVectorText(data: {
+    productName: string;
+    variantName: string | null;
+    brandName: string | null;
+    categoryName: string | null;
+    attributes: { name: string; value: string }[];
+    commonAttributes: { name: string; value: string }[];
+  }): string {
+    const parts = [
+      data.productName,
+      data.variantName,
+      data.brandName ? `Thương hiệu: ${data.brandName}` : null,
+      data.categoryName ? `Danh mục: ${data.categoryName}` : null,
+      data.attributes.map(a => `${a.name}: ${a.value}`).join(', '),
+      data.commonAttributes.map(a => `${a.name}: ${a.value}`).join(', '),
+    ].filter(Boolean);
+
+    return parts.join(' | ');
+  }
   async create(dto: CreateProductDto) {
-    // Check if category exists
     const categoryExists = await this.db.query.categories.findFirst({
       where: eq(categories.id, dto.categoryId),
     });
@@ -65,7 +90,7 @@ export class ProductService {
       );
     }
 
-    return await this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const [newProduct] = await tx
         .insert(products)
         .values({
@@ -101,16 +126,6 @@ export class ProductService {
           }
         }
       }
-      const [baseVariant] = await tx
-        .insert(product_variants)
-        .values({
-          productId: newProduct.id,
-          sku: dto.sku ?? '',
-          price: dto.price ?? 0,
-          stock: dto.stock,
-          name: dto.name,
-        })
-        .returning();
       if (dto.attribute?.length) {
         const attributeValuesToInsert = dto.attribute.map((attr) => {
           return {
@@ -124,8 +139,6 @@ export class ProductService {
           .insert(product_attribute_values)
           .values(attributeValuesToInsert);
       }
-
-      // Insert distinct images and map URLs to their generated IDs
       const urlToImageId = new Map<string, string>();
       if (productImagesToInsert.length > 0) {
         const insertedImages = await tx
@@ -134,6 +147,8 @@ export class ProductService {
           .returning();
         insertedImages.forEach((img) => urlToImageId.set(img.url, img.id));
       }
+
+      const insertedVariantImages = new Set<string>();
 
       if (dto.variants) {
         for (const variantDto of dto.variants) {
@@ -148,45 +163,132 @@ export class ProductService {
             })
             .returning();
 
-          // Link each specific variant to its own subset of images
+          if (variantDto.attributes && variantDto.attributes.length > 0) {
+            const variantAttributesToInsert = variantDto.attributes.map((attr) => ({
+              variantId: newVariant.id,
+              attributeId: attr.attributeId,
+              optionId: attr.optionId,
+              value: attr.value,
+            }));
+            await tx
+              .insert(variant_attribute_values)
+              .values(variantAttributesToInsert);
+          }
+
           if (variantDto.images && variantDto.images.length > 0) {
-            const variantImagesToInsert = variantDto.images.map(
-              (url, index) => {
+            const variantImagesToInsert = variantDto.images
+              .map((url, idx) => {
                 const imageId = urlToImageId.get(url);
-                if (!imageId)
-                  throw new InternalServerErrorException(
-                    `Image ID not found for URL: ${url}`,
-                  );
+                if (!imageId) return null;
+
+                const key = `${newVariant.id}:${imageId}`;
+                if (insertedVariantImages.has(key)) return null;
+
+                insertedVariantImages.add(key);
                 return {
                   variantId: newVariant.id,
                   imageId: imageId,
-                  isMain: index === 0,
+                  isMain: idx === 0,
                 };
-              },
-            );
+              })
+              .filter((v): v is NonNullable<typeof v> => v !== null);
 
-            await tx.insert(variant_images).values(variantImagesToInsert);
+            if (variantImagesToInsert.length > 0) {
+              await tx.insert(variant_images).values(variantImagesToInsert);
+            }
           }
         }
       }
-      if (urlToImageId.size > 0) {
-        const baseVariantImages = Array.from(urlToImageId.values()).map(
-          (imageId, index) => ({
-            variantId: baseVariant.id,
-            imageId,
-            isMain: index === 0,
-          }),
-        );
-        await tx.insert(variant_images).values(baseVariantImages);
-      }
+
+
       return {
         id: newProduct.id,
         slug: newProduct.slug,
         message: 'Product created successfully',
       };
     });
+
+    this.syncEmbedding(result.id).catch(err =>
+      this.logger.error(`Failed to sync embedding for product ${result.id}`, err)
+    );
+
+    return result;
   }
-  // plain get product detail without mapping
+
+  async syncEmbedding(id: string) {
+    // get product detail 
+    const product = await this.getProductDetail(id);
+
+    // map to build vector string 
+    const toUpserts = product.variants.map((variant) => {
+      const vectorText = this.buildProductVectorText({
+        productName: product.name,
+        variantName: variant.name,
+        attributes: variant.attributeValues.map((attr) => {
+          return {
+            name: attr.attribute.name || '',
+            value: attr.value || attr.option?.value || ''
+          }
+        }),
+        commonAttributes: product.attributeValues.map((attr) => {
+          return {
+            name: attr.attribute.name || '',
+            value: attr.value || attr.option?.value || ''
+          }
+        }),
+        brandName: product.brands?.name || '',
+        categoryName: product.category?.name || '',
+      });
+
+      return {
+        id: `${product.id}:${variant.id}`,
+        text: vectorText,
+        metadata: {
+          productId: product.id,
+          variantId: variant.id,
+          name: variant.name || product.name,
+          productName: product.name,
+          slug: product.slug,
+          categoryId: product.categoryId,
+          brandId: product.brands?.id || '',
+          price: variant.price,
+          // invalid
+          salePrice: -1,
+          stock: variant.stock,
+          sku: variant.sku,
+          attributes: vectorText,
+          isDeleted: false,
+        }
+      };
+    });
+
+    // 1. Sinh vector (Embeddings)
+    const embeddingResult = await this.pineconeClient.inference.embed({
+      model: 'multilingual-e5-large',
+      inputs: toUpserts.map((item) => item.text),
+      parameters: { input_type: 'passage', truncate: 'END' }
+    });
+
+    const records = toUpserts.map((item, index) => {
+      const embedding = embeddingResult.data[index];
+
+      // Ensure we have values (dense embedding)
+      if (!embedding || !('values' in embedding) || !embedding.values) {
+        throw new Error(`Failed to generate embedding for record ${item.id}`);
+      }
+
+      return {
+        id: item.id,
+        values: embedding.values,
+        metadata: item.metadata
+      };
+    });
+
+    // 3. Upsert lên index
+    if (records.length > 0) {
+      await this.pinecone.upsert({ records });
+    }
+  }
   async getProductDetail(product_id: string) {
     const product = await this.db.query.products.findFirst({
       where:
@@ -194,13 +296,22 @@ export class ProductService {
           ? eq(products.id, product_id)
           : eq(products.slug, product_id),
       with: {
+        brands: {
+          columns: {
+            name: true,
+            id: true,
+          },
+        },
         category: {
           columns: {
             slug: true,
+            name: true,
+            id: true,
           },
         },
         variants: {
           with: {
+            // disable these new colunn
             variantImages: {
               with: {
                 image: {
@@ -422,7 +533,7 @@ export class ProductService {
           ? this.cache.getCategoryById(current.parentId)
           : undefined;
       }
-
+      //@ts-ignore
       return {
         ...restProduct,
         categoryPath,
@@ -440,14 +551,15 @@ export class ProductService {
     query: ProductQueryDto,
   ): Promise<PaginatedGetProductListResponseDto> {
     const { offset, limit } = query;
+    const whereCondition = this.buildProductWhereConditions(query);
     const [totalCountResult, data] = await Promise.all([
       this.db
         .select({ value: count() })
         .from(products)
-        .where(this.buildProductWhereConditions(query)),
+        .where(whereCondition),
 
       this.db.query.products.findMany({
-        where: this.buildProductWhereConditions(query),
+        where: whereCondition,
         columns: {
           description: false,
         },
@@ -572,30 +684,50 @@ export class ProductService {
             ),
           );
         } else {
-          conditions.push(
-            exists(
-              this.db
-                .select()
-                .from(product_attribute_values)
-                .innerJoin(
-                  attributes,
-                  eq(product_attribute_values.attributeId, attributes.id),
-                )
-                .where(
-                  and(
-                    eq(product_attribute_values.productId, products.id),
-                    eq(attributes.id, attributeName),
-                    inArray(
-                      product_attribute_values.optionId,
-                      values.map((v) => v.toString()),
-                    ),
+          // Match product-level attributes
+          const productAttrCondition = exists(
+            this.db
+              .select()
+              .from(product_attribute_values)
+              .where(
+                and(
+                  eq(product_attribute_values.productId, products.id),
+                  eq(product_attribute_values.attributeId, attributeName),
+                  inArray(
+                    product_attribute_values.optionId,
+                    values.map((v) => v.toString()),
                   ),
                 ),
-            ),
+              ),
+          );
+
+          const variantAttrCondition = exists(
+            this.db
+              .select()
+              .from(variant_attribute_values)
+              .innerJoin(
+                product_variants,
+                eq(variant_attribute_values.variantId, product_variants.id),
+              )
+              .where(
+                and(
+                  eq(product_variants.productId, products.id),
+                  eq(variant_attribute_values.attributeId, attributeName),
+                  inArray(
+                    variant_attribute_values.optionId,
+                    values.map((v) => v.toString()),
+                  ),
+                ),
+              ),
+          );
+
+          conditions.push(
+            or(productAttrCondition, variantAttrCondition)!,
           );
         }
       });
     }
+    console.log(conditions)
 
     return conditions.length > 0 ? and(...conditions) : undefined;
   }
@@ -604,7 +736,7 @@ export class ProductService {
     product_id: string,
     updateProductDTO: UpdateProductDto,
   ) {
-    return await this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       // get snap shot
       const product = await tx.query.products.findFirst({
         where: eq(products.id, product_id),
@@ -741,14 +873,12 @@ export class ProductService {
       // parallel call for faster speed
       await Promise.all([updateProduct, updateAttributes, updateImages]);
 
-      // ─variant
       if (product.variants && updateProductDTO.variants) {
         const originalMap = new Map(product.variants.map((v) => [v.id, v]));
         const incomingIds = new Set(
           updateProductDTO.variants.map((v) => v.id).filter(Boolean),
         );
 
-        // Delete removed variants in one call
         const toDelete = Array.from(originalMap.keys()).filter(
           (id) => !incomingIds.has(id),
         );
@@ -756,11 +886,10 @@ export class ProductService {
         const deleteVariants =
           toDelete.length > 0
             ? tx
-                .delete(product_variants)
-                .where(inArray(product_variants.id, toDelete))
+              .delete(product_variants)
+              .where(inArray(product_variants.id, toDelete))
             : Promise.resolve();
 
-        // Process all variants in parallel
         const processVariants = Promise.all(
           updateProductDTO.variants.map(async (newData) => {
             let variantId: string;
@@ -781,16 +910,11 @@ export class ProductService {
               ];
               if (newData.attributes !== undefined) {
                 const variantAttrSync = async () => {
-                  const incomingAttrIds = newData.attributes!.map(
-                    (a) => a.attributeId,
-                  );
-
-                  // 1. Delete all existing attributes for this variant
+                  // brute force update: delete all existing and insert new
                   await tx
                     .delete(variant_attribute_values)
                     .where(eq(variant_attribute_values.variantId, variantId));
 
-                  // 2. Insert new ones (if any)
                   if (newData.attributes!.length > 0) {
                     await tx.insert(variant_attribute_values).values(
                       newData.attributes!.map((attr) => ({
@@ -805,8 +929,6 @@ export class ProductService {
 
                 ops.push(variantAttrSync());
               }
-
-              // Delete old variant images + bulk insert new ones
               if (newData.images !== undefined) {
                 ops.push(
                   (async () => {
@@ -832,7 +954,6 @@ export class ProductService {
 
               await Promise.all(ops);
             } else {
-              // Insert new variant
               const [inserted] = await tx
                 .insert(product_variants)
                 .values({
@@ -846,30 +967,29 @@ export class ProductService {
 
               variantId = inserted.id;
 
-              // Bulk insert attributes + images in parallel
               await Promise.all([
                 newData.attributes?.length
                   ? tx.insert(variant_attribute_values).values(
-                      newData.attributes.map((attr) => ({
-                        variantId,
-                        attributeId: attr.attributeId,
-                        optionId: attr.optionId,
-                        value: attr.value,
-                      })),
-                    )
+                    newData.attributes.map((attr) => ({
+                      variantId,
+                      attributeId: attr.attributeId,
+                      optionId: attr.optionId,
+                      value: attr.value,
+                    })),
+                  )
                   : Promise.resolve(),
 
                 newData.images?.length
                   ? tx.insert(variant_images).values(
-                      newData.images.map((url, index) => {
-                        const imageId = urlToImageId.get(url);
-                        if (!imageId)
-                          throw new InternalServerErrorException(
-                            `Image ID not found for URL: ${url}`,
-                          );
-                        return { variantId, imageId, isMain: index === 0 };
-                      }),
-                    )
+                    newData.images.map((url, index) => {
+                      const imageId = urlToImageId.get(url);
+                      if (!imageId)
+                        throw new InternalServerErrorException(
+                          `Image ID not found for URL: ${url}`,
+                        );
+                      return { variantId, imageId, isMain: index === 0 };
+                    }),
+                  )
                   : Promise.resolve(),
               ]);
             }
@@ -878,9 +998,14 @@ export class ProductService {
 
         await Promise.all([deleteVariants, processVariants]);
       }
-
       return { message: 'Product updated successfully' };
     });
+
+    this.syncEmbedding(product_id).catch(err =>
+      this.logger.error(`Failed to sync embedding for product ${product_id}`, err)
+    );
+
+    return result;
   }
   async deleteProduct(id) {
     await this.db.transaction(async (tx) => {
@@ -894,11 +1019,31 @@ export class ProductService {
       await tx.delete(products).where(eq(products.id, id));
     });
   }
+  async keyWordSearch(keyword: string) {
+    const searchPattern = `%${keyword}%`;
 
+    const res = await this.db
+      .select()
+      .from(products)
+      .where(
+        sql`${products.seoMetadata}->>'keywords' ILIKE ${searchPattern}`
+      );
+    const reskw = new Set()
+    res.forEach((e) => {
+      e.seoMetadata?.keywords?.forEach((e) => {
+        reskw.add(e)
+      })
+    })
+    return Array.from(reskw)
+
+  }
   private generateSlug(name: string): string {
     return name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
+  }
+  async updateVariantStock(variantId: string, stock: number) {
+    await this.db.update(product_variants).set({ stock }).where(eq(product_variants.id, variantId));
   }
 }

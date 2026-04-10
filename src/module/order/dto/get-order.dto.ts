@@ -1,6 +1,6 @@
 import { createSelectSchema } from 'drizzle-zod';
 import { createZodDto } from 'nestjs-zod';
-import { z } from 'zod';
+import z from 'zod';
 import {
   customer_orders,
   customer_orders_items,
@@ -10,6 +10,8 @@ import {
 } from 'src/database/schema';
 import { IPaginatedRes } from 'src/types/IPaginatedRes';
 import { paginateSchema } from 'src/common/dto/paginate.dto';
+import { selectVariantSchema } from 'src/module/product/dto/get-product.dto';
+import { paymentSchema } from 'src/module/payment/dto/get-payment.dto';
 
 const dateStringSchema = z.preprocess(
   (val) => (val instanceof Date ? val.toISOString() : val),
@@ -26,9 +28,7 @@ export const selectOrderSchema = createSelectSchema(customer_orders)
     createdAt: dateStringSchema,
     updatedAt: dateStringSchema,
   });
-export const selectOrderItemSchema = createSelectSchema(
-  customer_orders_items,
-)
+export const selectOrderItemSchema = createSelectSchema(customer_orders_items)
   .omit({
     createdAt: true,
     updatedAt: true,
@@ -37,7 +37,6 @@ export const selectOrderItemSchema = createSelectSchema(
     createdAt: dateStringSchema,
     updatedAt: dateStringSchema,
   });
-export const selectVariantSchema = createSelectSchema(product_variants);
 export const selectProductSchema = createSelectSchema(products)
   .omit({
     createdAt: true,
@@ -68,6 +67,7 @@ export class GetOrderQueryDto extends createZodDto(getOrderQuerySchema) {}
 
 // 3. Response schemas
 const getOrderResponseSchema = selectOrderSchema.extend({
+  payments: z.array(paymentSchema).optional(),
   items: z
     .array(
       selectOrderItemSchema.extend({
