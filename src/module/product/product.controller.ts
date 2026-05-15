@@ -24,6 +24,7 @@ import { ProductService } from './product.service';
 import GetProductResponseDto, {
   PaginatedGetProductListResponseDto,
   ProductQueryDto,
+  VariantSearchResponseDto,
 } from './dto/get-product.dto';
 import { RoleGuard } from 'src/guard/role.guard';
 import { Public } from 'src/decorator/isPublic';
@@ -63,6 +64,14 @@ export class ProductController {
     const { q } = query;
     if (!q) return [];
     return this.productService.keyWordSearch(q);
+  }
+  @Get('search-variant')
+  @Public()
+  @ApiOkResponse({ type: [VariantSearchResponseDto] })
+  async searchVariant(@Query() query: ProductQueryDto): Promise<VariantSearchResponseDto[]> {
+    const { q } = query;
+    if (!q) return [];
+    return this.productService.variantSearch(q) as any;
   }
 
   @Get(':id')

@@ -172,3 +172,19 @@ const productQuerySchema = z.object({
 });
 
 export class ProductQueryDto extends createZodDto(productQuerySchema) { }
+
+const VariantSearchResponseSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().nullable(),
+  sku: z.string(),
+  stock: z.number(),
+  price: z.number(),
+  productId: z.string().uuid(),
+  productName: z.string(),
+  productImage: z.string().nullable(),
+});
+
+export class VariantSearchResponseDto extends createZodDto(
+  VariantSearchResponseSchema,
+) { }
+

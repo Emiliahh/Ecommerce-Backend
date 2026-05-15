@@ -16,3 +16,4 @@ export const DrizzleProvider = {
   },
 };
 export type DB = PostgresJsDatabase<typeof schema>;
+export type Transaction = Parameters<Parameters<DB['transaction']>[0]>[0];

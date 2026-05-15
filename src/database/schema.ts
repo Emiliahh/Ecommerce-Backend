@@ -39,6 +39,16 @@ export const paymentStatus = pgEnum('payment_status', [
   'refunded',
   'partial_refunded',
 ]);
+export const importOrderStatus = pgEnum('import_order_status', [
+  'draft',
+  'pending',
+  'processing',
+  'in_transit',
+  'partially_received',
+  'completed',
+  'cancelled',
+  'returned',
+]);
 export const users = pgTable(
   'users',
   {
@@ -294,7 +304,9 @@ export const product_variants = pgTable(
     stock: integer('stock').notNull().default(0),
     // Discount info cached from events for performance
     discountPercentage: integer('discount_percentage'),
-    discountEventId: uuid('discount_event_id').references(() => discount_events.id),
+    discountEventId: uuid('discount_event_id').references(
+      () => discount_events.id,
+    ),
     // name like for egs: iphone 17 pro max 256G CAM VŨ TRỤ
     name: text('name'),
   },
@@ -308,6 +320,52 @@ export const product_variants = pgTable(
     ),
   ],
 );
+
+/**
+ * for import stock
+ */
+export const import_orders = pgTable('import_orders', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  status: importOrderStatus('status').notNull().default('draft'),
+  note: text('note'),
+});
+
+export const import_order_items = pgTable('import_order_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  importOrderId: uuid('import_order_id')
+    .references(() => import_orders.id, {
+      onDelete: 'cascade',
+    })
+    .notNull(),
+  variantId: uuid('variant_id')
+    .references(() => product_variants.id, {
+      onDelete: 'cascade',
+    })
+    .notNull(),
+  quantity: integer('quantity').notNull(),
+  receivedQuantity: integer('received_quantity').notNull().default(0),
+  price: bigint('price', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Log every import order status change
+ */
+export const import_order_logs = pgTable('import_order_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  importOrderId: uuid('import_order_id')
+    .references(() => import_orders.id, {
+      onDelete: 'cascade',
+    })
+    .notNull(),
+  fromStatus: importOrderStatus('from_status'),
+  toStatus: importOrderStatus('to_status').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
 
 /**
  * Maps the SKU to specific options (e.g., Storage = 256GB, Color = Blue)
@@ -463,7 +521,7 @@ export const customer_orders = pgTable(
     discountAmount: integer('discount_amount').notNull().default(0),
     shippingFee: integer('shipping_fee').notNull().default(0),
     customerNote: text('customer_note'),
-    // this will e the look up code 
+    // this will e the look up code
     orderCode: text('order_code'),
 
     // Snapshot of shipping info so past orders aren't affected if user modifies/deletes their address book
@@ -691,6 +749,7 @@ export const productVariantsRelations = relations(
     variantImages: many(variant_images),
     cartItems: many(customer_carts),
     orderItems: many(customer_orders_items),
+    importItems: many(import_order_items),
   }),
 );
 
@@ -841,6 +900,34 @@ export const discountEventProductsRelations = relations(
     product: one(products, {
       fields: [discount_event_products.productId],
       references: [products.id],
+    }),
+  }),
+);
+export const importOrdersRelations = relations(import_orders, ({ many }) => ({
+  items: many(import_order_items),
+  logs: many(import_order_logs),
+}));
+
+export const importOrderItemsRelations = relations(
+  import_order_items,
+  ({ one }) => ({
+    order: one(import_orders, {
+      fields: [import_order_items.importOrderId],
+      references: [import_orders.id],
+    }),
+    variant: one(product_variants, {
+      fields: [import_order_items.variantId],
+      references: [product_variants.id],
+    }),
+  }),
+);
+
+export const importOrderLogsRelations = relations(
+  import_order_logs,
+  ({ one }) => ({
+    order: one(import_orders, {
+      fields: [import_order_logs.importOrderId],
+      references: [import_orders.id],
     }),
   }),
 );

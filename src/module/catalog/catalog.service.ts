@@ -76,6 +76,7 @@ export class CatalogService {
         .insert(categories)
         .values({
           name: dto.name,
+          image: dto.image,
           slug,
           parentId: dto.parentId,
           level: parentCategory?.level ? parentCategory.level + 1 : 0,
@@ -129,6 +130,7 @@ export class CatalogService {
         .update(categories)
         .set({
           name: dto.name,
+          image: dto.image,
           slug: dto.slug,
           parentId: dto.parentId,
           updatedAt: new Date(),

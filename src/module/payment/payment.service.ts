@@ -5,7 +5,7 @@ import { OrderService } from '../order/order.service';
 import { Subject, filter } from 'rxjs';
 import { type DB, DRIZZLE } from 'src/database/dizzle.provider';
 import { payments } from 'src/database/schema';
-import { eq, count, desc, and } from 'drizzle-orm';
+import { eq, count, desc } from 'drizzle-orm';
 import { GetPaymentQueryDto } from './dto/get-payment.dto';
 
 @Injectable()
@@ -16,7 +16,7 @@ export class PaymentService {
     @Inject(DRIZZLE) private readonly db: DB,
     @Inject(forwardRef(() => OrderService))
     private readonly orderService: OrderService,
-  ) { }
+  ) {}
   orderEvents$ = new Subject<{ data: any }>();
 
   async createPaymentLink(
@@ -86,10 +86,7 @@ export class PaymentService {
     const whereClause = status ? eq(payments.status, status as any) : undefined;
 
     const [totalCountResult, data] = await Promise.all([
-      this.db
-        .select({ value: count() })
-        .from(payments)
-        .where(whereClause),
+      this.db.select({ value: count() }).from(payments).where(whereClause),
       this.db.query.payments.findMany({
         where: whereClause,
         limit,

@@ -36,6 +36,8 @@ import { CloudinaryModule } from './module/cloudinary/cloudinary.module';
 import { ChatbotController } from './module/chatbot/chatbot.controller';
 import { ChatbotService } from './module/chatbot/chatbot.service';
 import { ChatbotModule } from './module/chatbot/chatbot.module';
+import { StatisticModule } from './module/statistic/statistic.module';
+import { ImportModule } from './module/import/import.module';
 
 @Catch(HttpException)
 class HttpExceptionFilter extends BaseExceptionFilter {
@@ -73,6 +75,8 @@ class HttpExceptionFilter extends BaseExceptionFilter {
     UploadModule,
     CloudinaryModule,
     ChatbotModule,
+    StatisticModule,
+    ImportModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1037,6 +1037,27 @@ export class ProductService {
     return Array.from(reskw)
 
   }
+  // by sku name or product name
+  async variantSearch(keyword: string) {
+    const searchPattern = `%${keyword}%`;
+    const res = await this.db
+      .select({
+        id: product_variants.id,
+        name: product_variants.name,
+        sku: product_variants.sku,
+        stock: product_variants.stock,
+        price: product_variants.price,
+        productId: product_variants.productId,
+        productName: products.name,
+        productImage: sql<string>`(SELECT ${product_images.url} FROM product_images WHERE ${product_images.productId} = ${products.id} AND ${product_images.isMain} = true)`
+      })
+      .from(product_variants)
+      .innerJoin(products, eq(product_variants.productId, products.id))
+      .where(
+        sql`${product_variants.name} ILIKE ${searchPattern} OR ${product_variants.sku} ILIKE ${searchPattern} OR ${products.name} ILIKE ${searchPattern}`
+      );
+    return res;
+  }
   private generateSlug(name: string): string {
     return name
       .toLowerCase()

@@ -21,7 +21,7 @@ export class ChatbotController {
   async chat(@Body() chatDto: ChatDto) {
     const stream = await this.chatbotService.chat(chatDto.message);
     return new Observable((subcriber) => {
-      (async () => {
+      void (async () => {
         try {
           for await (const chunk of stream) {
             subcriber.next({ data: chunk.text });

@@ -8,6 +8,13 @@
       "when": 1775858360764,
       "tag": "0000_thin_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776006709529,
+      "tag": "0001_sweet_kree",
+      "breakpoints": true
     }
   ]
 }
